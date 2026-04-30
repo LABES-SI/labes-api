@@ -1,38 +1,42 @@
 # Labes API
 
-API desenvolvida com arquitetura MVC.
+API do observatório de dados, construída com **FastAPI** seguindo a arquitetura MVC + Service Layer + Repository Pattern.
 
-## Estrutura do Projeto
+## Documentação
+
+- [Arquitetura](docs/ARCHITECTURE.md) — estrutura de camadas, responsabilidades, fluxo de requisição e exemplos de código
+- [Branches](docs/BRANCHING.md) — convenções de branches e fluxo de trabalho com Git
+
+## Estrutura do projeto
 
 ```
 labes-api/
-├── app/                      # Diretório principal da aplicação
-│   ├── models/               # Modelos de dados e estruturas de banco de dados
-│   ├── controllers/          # Manipuladores de requisições e lógica de controle
-│   ├── views/                # Serializadores de resposta e schemas
-│   ├── routes/               # Endpoints da API e roteamento
-│   ├── services/             # Lógica de negócios e integrações externas
-│   ├── middleware/           # Middleware customizado
-│   ├── utils/                # Funções utilitárias e helpers
-│   └── config/               # Configurações da aplicação
-├── tests/                    # Testes unitários e de integração
-├── main.py                   # Ponto de entrada da aplicação
-├── pyproject.toml            # Configuração do projeto
-├── mise.toml                 # Configuração do ambiente
-└── README.md                 # Este arquivo
+├── app/
+│   ├── core/              # Configuração, auth, exceções, dependências comuns
+│   ├── routes/            # Endpoints HTTP (FastAPI routers)
+│   ├── services/          # Lógica de aplicação (autorização, composição, regras)
+│   ├── repositories/      # Acesso ao warehouse (queries, mapeamento gold)
+│   ├── schemas/           # Pydantic: request/response
+│   ├── domain/            # Entidades de domínio (estruturas internas)
+│   ├── models/            # ORM do banco operacional próprio
+│   ├── middleware/        # Middlewares customizados
+│   └── utils/             # Helpers transversais
+├── tests/
+│   ├── routes/
+│   ├── services/
+│   └── repositories/
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── BRANCHING.md
+├── main.py                # Ponto de entrada
+├── pyproject.toml
+└── mise.toml
 ```
 
-## Descrição das Pastas
+## Requisitos
 
-- **models/**: Define as estruturas de dados e modelos do banco de dados
-- **controllers/**: Contém a lógica de controle que processa requisições
-- **views/**: Serializa dados para resposta ao cliente
-- **routes/**: Define os endpoints e mapeamento de rotas
-- **services/**: Implementa a lógica de negócios e integrações
-- **middleware/**: Middleware para processar requisições/respostas
-- **utils/**: Funções auxiliares reutilizáveis
-- **config/**: Configurações gerais da aplicação
-- **tests/**: Testes unitários e testes de integração
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) — gerenciador de dependências
 
 ## Requisitos
 
