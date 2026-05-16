@@ -91,3 +91,31 @@ python main.py
 ```
 
 A API estará disponível em `http://localhost:8000`
+
+## Container
+
+### Requisitos
+
+- [Podman](https://podman.io/) ou Docker
+
+### Build
+
+```bash
+podman build -t labes-api -f Containerfile .
+```
+
+### Executar
+
+Copie o `.env.example` para `.env` e preencha as variáveis:
+
+```bash
+cp .env.example .env
+```
+
+Suba o container passando o arquivo de variáveis:
+
+```bash
+podman run -p 8000:8000 --env-file .env labes-api
+```
+
+A API estará disponível em `http://localhost:8000`
