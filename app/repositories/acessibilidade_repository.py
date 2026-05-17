@@ -1,8 +1,16 @@
-from sqlalchemy import Numeric, func, select
+from sqlalchemy import Numeric, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.acessibilidade import AcessibilidadeMunicipio
+from app.domain.acessibilidade import (
+    AcessibilidadeMunicipio,
+    AcessibilidadeTemporal,
+)
 from app.models.acessibilidade import acessibilidade as t
+from app.models.acessibilidade import (
+    dim_entidade as de,
+    dim_tp_localizacao as dl,
+    fato_acessibilidade as f,
+)
 
 
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
@@ -17,8 +25,27 @@ def _row_to_municipio(row) -> AcessibilidadeMunicipio:
     )
 
 
+def _row_to_temporal(row) -> AcessibilidadeTemporal:
+    return AcessibilidadeTemporal(
+        ano=int(row.ano),
+        codigo_localizacao=int(row.codigo_localizacao),
+        localizacao=row.localizacao,
+        percentual=float(row.percentual),
+    )
+
+
 def _avg_pct(col):
     return func.round((func.avg(col).cast(Numeric) * 100), 1)
+
+
+METRIC_TO_FATO_COLUMN = {
+    "rampas": f.c.in_acessibilidade_rampas,
+    "corrimao": f.c.in_acessibilidade_corrimao,
+    "elevador": f.c.in_acessibilidade_elevador,
+    "pisos_tateis": f.c.in_acessibilidade_pisos_tateis,
+    "vao_livre": f.c.in_acessibilidade_vao_livre,
+    "banheiro_pne": f.c.in_banheiro_pne,
+}
 
 
 class AcessibilidadeRepository:
@@ -82,6 +109,60 @@ class AcessibilidadeRepository:
     async def find_anos_disponiveis(self) -> list[int]:
         """Lista de anos do censo presentes na tabela, em ordem crescente."""
         return [int(v) for v in await self._find_distinct(t.c.NU_ANO_CENSO)]
+
+    async def find_evolucao_por_localizacao(
+        self,
+        metrica: str,
+    ) -> list[AcessibilidadeTemporal]:
+        """Percentual da métrica por (ano, tipo de localização).
+
+        Denominador é o total de entidades naquele ano + tipo de localização;
+        numerador é o total com a métrica = 1. Equivale à query original com
+        subquery, escrita aqui via agregação condicional (COUNT(CASE WHEN...))
+        para evitar a subquery correlacionada.
+        """
+        if metrica not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperado uma de: "
+                f"{sorted(METRIC_TO_FATO_COLUMN)}"
+            )
+        col = METRIC_TO_FATO_COLUMN[metrica]
+
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.c.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        stmt = (
+            select(
+                f.c.nu_ano_censo.label("ano"),
+                dl.c.co_tp_localizacao.label("codigo_localizacao"),
+                dl.c.no_tp_localizacao.label("localizacao"),
+                percentual.label("percentual"),
+            )
+            .select_from(
+                f.outerjoin(de, f.c.co_entidade == de.c.co_entidade).outerjoin(
+                    dl, de.c.tp_localizacao == dl.c.co_tp_localizacao
+                )
+            )
+            .where(
+                dl.c.no_tp_localizacao.is_not(None),
+                f.c.nu_ano_censo.is_not(None),
+            )
+            .group_by(
+                f.c.nu_ano_censo,
+                dl.c.co_tp_localizacao,
+                dl.c.no_tp_localizacao,
+            )
+            .order_by(f.c.nu_ano_censo, dl.c.no_tp_localizacao)
+        )
+
+        result = await self._session.execute(stmt)
+        return [_row_to_temporal(row) for row in result]
 
     async def _find_distinct(self, column) -> list:
         """SELECT DISTINCT column WHERE column IS NOT NULL ORDER BY column.

@@ -18,3 +18,20 @@ class AcessibilidadeMunicipio:
     pisos_tateis: float
     vao_livre: float
     banheiro_pne: float
+
+
+@dataclass(frozen=True)
+class AcessibilidadeTemporal:
+    """
+    Percentual de escolas com a métrica de acessibilidade selecionada, por
+    (ano censo, tipo de localização). Alimenta o gráfico de evolução temporal
+    por tipo de localização (urbana/rural).
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
+    silver.dim_tp_localizacao.
+    """
+
+    ano: int
+    codigo_localizacao: int
+    localizacao: str
+    percentual: float

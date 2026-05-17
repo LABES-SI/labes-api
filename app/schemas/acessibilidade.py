@@ -52,3 +52,25 @@ class PainelResponse(BaseModel):
 
     descricao: str = Field(..., description="Identificador semântico do painel.")
     data: PainelData
+
+
+class AnaliseTemporalFiltros(BaseModel):
+    metricas: list[MetricaFiltro]
+
+
+class AnaliseTemporalData(BaseModel):
+    graficos: dict[str, Grafico] = Field(
+        ...,
+        description="Mapa de gráficos da análise temporal, indexados por chave semântica.",
+    )
+    dados_filtros: AnaliseTemporalFiltros = Field(
+        ...,
+        description="Opções disponíveis para popular dropdowns do frontend.",
+    )
+
+
+class AnaliseTemporalResponse(BaseModel):
+    """Resposta da análise temporal por tipo de localização."""
+
+    descricao: str = Field(..., description="Identificador semântico do recurso.")
+    data: AnaliseTemporalData
