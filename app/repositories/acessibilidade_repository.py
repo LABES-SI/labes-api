@@ -1,7 +1,8 @@
-from sqlalchemy import text
+from sqlalchemy import Numeric, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.acessibilidade import AcessibilidadeMunicipio
+from app.models.acessibilidade import acessibilidade as t
 
 
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
@@ -14,6 +15,10 @@ def _row_to_municipio(row) -> AcessibilidadeMunicipio:
         vao_livre=float(row.vao_livre),
         banheiro_pne=float(row.banheiro_pne),
     )
+
+
+def _avg_pct(col):
+    return func.round((func.avg(col).cast(Numeric) * 100), 1)
 
 
 class AcessibilidadeRepository:
@@ -35,89 +40,61 @@ class AcessibilidadeRepository:
     async def find_media_por_municipio(
         self,
         ano: int | None,
-        municipios: list[str],
+        municipios: list[str] | None,
     ) -> list[AcessibilidadeMunicipio]:
-        if not municipios:
-            return []
-
-        query = text(
-            """
-            SELECT
-                "NO_MUNICIPIO" AS municipio,
-                ROUND(AVG("IN_ACESSIBILIDADE_RAMPAS")::numeric       * 100, 1) AS rampas,
-                ROUND(AVG("IN_ACESSIBILIDADE_CORRIMAO")::numeric     * 100, 1) AS corrimao,
-                ROUND(AVG("IN_ACESSIBILIDADE_ELEVADOR")::numeric     * 100, 1) AS elevador,
-                ROUND(AVG("IN_ACESSIBILIDADE_PISOS_TATEIS")::numeric * 100, 1) AS pisos_tateis,
-                ROUND(AVG("IN_ACESSIBILIDADE_VAO_LIVRE")::numeric    * 100, 1) AS vao_livre,
-                ROUND(AVG("IN_BANHEIRO_PNE")::numeric                * 100, 1) AS banheiro_pne
-            FROM silver.acessibilidade
-            WHERE (CAST(:ano AS BIGINT) IS NULL OR "NU_ANO_CENSO" = :ano)
-              AND "NO_MUNICIPIO" = ANY(:municipios)
-            GROUP BY "NO_MUNICIPIO"
-            ORDER BY "NO_MUNICIPIO"
-            """
+        stmt = (
+            select(
+                t.c.NO_MUNICIPIO.label("municipio"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_RAMPAS).label("rampas"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_CORRIMAO).label("corrimao"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_ELEVADOR).label("elevador"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_PISOS_TATEIS).label("pisos_tateis"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_VAO_LIVRE).label("vao_livre"),
+                _avg_pct(t.c.IN_BANHEIRO_PNE).label("banheiro_pne"),
+            )
+            .where(t.c.NO_MUNICIPIO.is_not(None))
+            .group_by(t.c.NO_MUNICIPIO)
+            .order_by(t.c.NO_MUNICIPIO)
         )
 
-        result = await self._session.execute(
-            query,
-            {"ano": ano, "municipios": municipios},
-        )
+        if ano is not None:
+            stmt = stmt.where(t.c.NU_ANO_CENSO == ano)
+        if municipios:
+            stmt = stmt.where(t.c.NO_MUNICIPIO.in_(municipios))
 
-        return [_row_to_municipio(row) for row in result]
-
-    async def find_acessibilidade_todos_municipios(
-        self,
-        ano: int | None,
-    ) -> list[AcessibilidadeMunicipio]:
-        """Médias por município para todos os municípios do recorte.
-
-        Usado quando o usuário não envia filtro de municípios — o frontend
-        ordena/seleciona conforme a métrica escolhida.
-        """
-        query = text(
-            """
-            SELECT
-                "NO_MUNICIPIO" AS municipio,
-                ROUND(AVG("IN_ACESSIBILIDADE_RAMPAS")::numeric       * 100, 1) AS rampas,
-                ROUND(AVG("IN_ACESSIBILIDADE_CORRIMAO")::numeric     * 100, 1) AS corrimao,
-                ROUND(AVG("IN_ACESSIBILIDADE_ELEVADOR")::numeric     * 100, 1) AS elevador,
-                ROUND(AVG("IN_ACESSIBILIDADE_PISOS_TATEIS")::numeric * 100, 1) AS pisos_tateis,
-                ROUND(AVG("IN_ACESSIBILIDADE_VAO_LIVRE")::numeric    * 100, 1) AS vao_livre,
-                ROUND(AVG("IN_BANHEIRO_PNE")::numeric                * 100, 1) AS banheiro_pne
-            FROM silver.acessibilidade
-            WHERE (CAST(:ano AS BIGINT) IS NULL OR "NU_ANO_CENSO" = :ano)
-              AND "NO_MUNICIPIO" IS NOT NULL
-            GROUP BY "NO_MUNICIPIO"
-            ORDER BY "NO_MUNICIPIO" ASC
-            """
-        )
-
-        result = await self._session.execute(query, {"ano": ano})
-
+        result = await self._session.execute(stmt)
         return [_row_to_municipio(row) for row in result]
 
     async def find_municipios_disponiveis(self) -> list[tuple[int, str]]:
         """Lista (codigo, nome) de todos os municípios presentes na tabela."""
-        query = text(
-            """
-            SELECT DISTINCT "CO_MUNICIPIO" AS codigo, "NO_MUNICIPIO" AS nome
-            FROM silver.acessibilidade
-            WHERE "CO_MUNICIPIO" IS NOT NULL AND "NO_MUNICIPIO" IS NOT NULL
-            ORDER BY "NO_MUNICIPIO"
-            """
+        stmt = (
+            select(
+                t.c.CO_MUNICIPIO.label("codigo"),
+                t.c.NO_MUNICIPIO.label("nome"),
+            )
+            .where(t.c.CO_MUNICIPIO.is_not(None), t.c.NO_MUNICIPIO.is_not(None))
+            .distinct()
+            .order_by(t.c.NO_MUNICIPIO)
         )
-        result = await self._session.execute(query)
+        result = await self._session.execute(stmt)
         return [(int(row.codigo), row.nome) for row in result]
 
     async def find_anos_disponiveis(self) -> list[int]:
         """Lista de anos do censo presentes na tabela, em ordem crescente."""
-        query = text(
-            """
-            SELECT DISTINCT "NU_ANO_CENSO" AS ano
-            FROM silver.acessibilidade
-            WHERE "NU_ANO_CENSO" IS NOT NULL
-            ORDER BY "NU_ANO_CENSO"
-            """
+        return [int(v) for v in await self._find_distinct(t.c.NU_ANO_CENSO)]
+
+    async def _find_distinct(self, column) -> list:
+        """SELECT DISTINCT column WHERE column IS NOT NULL ORDER BY column.
+
+        Helper para listas de valores únicos de uma coluna — usado pelas
+        funções `find_*_disponiveis` que alimentam os dropdowns de filtro.
+        Não cobre o caso de múltiplas colunas (ex: município = código + nome).
+        """
+        stmt = (
+            select(column)
+            .where(column.is_not(None))
+            .distinct()
+            .order_by(column)
         )
-        result = await self._session.execute(query)
-        return [int(row.ano) for row in result]
+        result = await self._session.execute(stmt)
+        return [row[0] for row in result]
