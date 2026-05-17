@@ -3,20 +3,21 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_acessibilidade_service
-from app.schemas.acessibilidade import MapaResponse, PainelResponse
+from app.schemas.acessibilidade import (
+    AnaliseTemporalResponse,
+    MapaResponse,
+    PainelResponse,
+)
 from app.services.acessibilidade_service import AcessibilidadeService
 
 router = APIRouter(prefix="/acessibilidade", tags=["acessibilidade"])
 
 
-MetricaAcessibilidade = Literal[
-    "rampas",
-    "corrimao",
-    "elevador",
-    "pisos_tateis",
-    "vao_livre",
-    "banheiro_pne",
-]
+_METRICAS_ACEITAS = (
+    "in_acessibilidade_rampas, in_acessibilidade_corrimao, "
+    "in_acessibilidade_elevador, in_acessibilidade_pisos_tateis, "
+    "in_acessibilidade_vao_livre, in_banheiro_pne"
+)
 
 
 VariavelAcessibilidade = Literal[
@@ -62,12 +63,9 @@ async def get_painel_acessibilidade(
             "Se omitido, o tab_percent cobre todos os municípios do recorte."
         ),
     ),
-    metrica: MetricaAcessibilidade = Query(
-        "banheiro_pne",
-        description=(
-            "Métrica de acessibilidade a plotar. Valores aceitos: "
-            "rampas, corrimao, elevador, pisos_tateis, vao_livre, banheiro_pne."
-        ),
+    metrica: str = Query(
+        "in_banheiro_pne",
+        description=f"Métrica de acessibilidade a plotar. Valores aceitos: {_METRICAS_ACEITAS}.",
     ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> PainelResponse:
@@ -126,3 +124,22 @@ async def get_mapa_acessibilidade(
         tp_localizacao=tp_localizacao,
     )
     return MapaResponse(**envelope)
+
+
+@router.get(
+    "/analise-temporal",
+    response_model=AnaliseTemporalResponse,
+    summary="Evolução temporal da acessibilidade por tipo de localização",
+)
+async def get_analise_temporal_acessibilidade(
+    metrica: str = Query(
+        "in_acessibilidade_rampas",
+        description=f"Métrica de acessibilidade a plotar. Valores aceitos: {_METRICAS_ACEITAS}.",
+    ),
+    service: AcessibilidadeService = Depends(get_acessibilidade_service),
+) -> AnaliseTemporalResponse:
+    """Retorna o gráfico de evolução temporal por tipo de localização
+    (uma linha por urbana/rural ao longo dos anos censo) + opções de
+    filtro de métrica para popular dropdowns do frontend."""
+    envelope = await service.build_analise_temporal(metrica=metrica)
+    return AnaliseTemporalResponse(**envelope)

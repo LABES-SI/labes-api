@@ -26,7 +26,7 @@ class MunicipioFiltro(BaseModel):
 
 
 class MetricaFiltro(BaseModel):
-    chave: str = Field(..., description="Identificador interno da métrica (ex: 'rampas').")
+    chave: str = Field(..., description="Identificador interno da métrica (ex: 'in_acessibilidade_rampas').")
     label: str = Field(..., description="Label PT-BR para exibição (ex: 'Rampas').")
 
 
@@ -78,3 +78,23 @@ class MapaResponse(BaseModel):
 
     descricao: str = Field(..., description="Identificador semântico do mapa.")
     data: MapaData
+class AnaliseTemporalFiltros(BaseModel):
+    metricas: list[MetricaFiltro]
+
+
+class AnaliseTemporalData(BaseModel):
+    graficos: dict[str, Grafico] = Field(
+        ...,
+        description="Mapa de gráficos da análise temporal, indexados por chave semântica.",
+    )
+    dados_filtros: AnaliseTemporalFiltros = Field(
+        ...,
+        description="Opções disponíveis para popular dropdowns do frontend.",
+    )
+
+
+class AnaliseTemporalResponse(BaseModel):
+    """Resposta da análise temporal por tipo de localização."""
+
+    descricao: str = Field(..., description="Identificador semântico do recurso.")
+    data: AnaliseTemporalData

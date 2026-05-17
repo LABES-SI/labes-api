@@ -25,7 +25,7 @@ from app.services.acessibilidade_service import METRIC_FIELDS, AcessibilidadeSer
 
 
 OUT_DIR = Path(__file__).parent / "out"
-DEFAULT_METRICA = "banheiro_pne"
+DEFAULT_METRICA = "in_banheiro_pne"
 
 
 def _slugify(value: str) -> str:

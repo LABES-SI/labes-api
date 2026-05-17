@@ -1,7 +1,11 @@
 from sqlalchemy import Numeric, case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.acessibilidade import AcessibilidadeMapaPonto, AcessibilidadeMunicipio
+from app.domain.acessibilidade import (
+    AcessibilidadeMapaPonto,
+    AcessibilidadeMunicipio,
+    AcessibilidadeTemporal,
+)
 from app.models.acessibilidade import (
     acessibilidade as t,
     dim_entidade,
@@ -21,15 +25,34 @@ VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = {
 }
 
 
+METRIC_TO_FATO_COLUMN = {
+    "in_acessibilidade_rampas": fato_acessibilidade.c.in_acessibilidade_rampas,
+    "in_acessibilidade_corrimao": fato_acessibilidade.c.in_acessibilidade_corrimao,
+    "in_acessibilidade_elevador": fato_acessibilidade.c.in_acessibilidade_elevador,
+    "in_acessibilidade_pisos_tateis": fato_acessibilidade.c.in_acessibilidade_pisos_tateis,
+    "in_acessibilidade_vao_livre": fato_acessibilidade.c.in_acessibilidade_vao_livre,
+    "in_banheiro_pne": fato_acessibilidade.c.in_banheiro_pne,
+}
+
+
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
     return AcessibilidadeMunicipio(
         municipio=row.municipio,
-        rampas=float(row.rampas),
-        corrimao=float(row.corrimao),
-        elevador=float(row.elevador),
-        pisos_tateis=float(row.pisos_tateis),
-        vao_livre=float(row.vao_livre),
-        banheiro_pne=float(row.banheiro_pne),
+        in_acessibilidade_rampas=float(row.in_acessibilidade_rampas),
+        in_acessibilidade_corrimao=float(row.in_acessibilidade_corrimao),
+        in_acessibilidade_elevador=float(row.in_acessibilidade_elevador),
+        in_acessibilidade_pisos_tateis=float(row.in_acessibilidade_pisos_tateis),
+        in_acessibilidade_vao_livre=float(row.in_acessibilidade_vao_livre),
+        in_banheiro_pne=float(row.in_banheiro_pne),
+    )
+
+
+def _row_to_temporal(row) -> AcessibilidadeTemporal:
+    return AcessibilidadeTemporal(
+        ano=int(row.ano),
+        codigo_localizacao=int(row.codigo_localizacao),
+        localizacao=row.localizacao,
+        percentual=float(row.percentual),
     )
 
 
@@ -76,12 +99,12 @@ class AcessibilidadeRepository:
         stmt = (
             select(
                 t.c.NO_MUNICIPIO.label("municipio"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_RAMPAS).label("rampas"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_CORRIMAO).label("corrimao"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_ELEVADOR).label("elevador"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_PISOS_TATEIS).label("pisos_tateis"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_VAO_LIVRE).label("vao_livre"),
-                _avg_pct(t.c.IN_BANHEIRO_PNE).label("banheiro_pne"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_RAMPAS).label("in_acessibilidade_rampas"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_CORRIMAO).label("in_acessibilidade_corrimao"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_ELEVADOR).label("in_acessibilidade_elevador"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_PISOS_TATEIS).label("in_acessibilidade_pisos_tateis"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_VAO_LIVRE).label("in_acessibilidade_vao_livre"),
+                _avg_pct(t.c.IN_BANHEIRO_PNE).label("in_banheiro_pne"),
             )
             .where(t.c.NO_MUNICIPIO.is_not(None))
             .group_by(t.c.NO_MUNICIPIO)
@@ -265,6 +288,65 @@ class AcessibilidadeRepository:
             }
             for r in result.mappings()
         ]
+
+    async def find_evolucao_por_localizacao(
+        self,
+        metrica: str,
+    ) -> list[AcessibilidadeTemporal]:
+        """Percentual da métrica por (ano, tipo de localização).
+
+        Denominador é o total de entidades naquele ano + tipo de localização;
+        numerador é o total com a métrica = 1. Equivale à query original com
+        subquery, escrita aqui via agregação condicional (COUNT(CASE WHEN...))
+        para evitar a subquery correlacionada.
+        """
+        if metrica not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperado uma de: "
+                f"{sorted(METRIC_TO_FATO_COLUMN)}"
+            )
+        col = METRIC_TO_FATO_COLUMN[metrica]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        l = dim_tp_localizacao.c
+
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        join_tree = (
+            fato_acessibilidade
+            .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        stmt = (
+            select(
+                f.nu_ano_censo.label("ano"),
+                l.co_tp_localizacao.label("codigo_localizacao"),
+                l.no_tp_localizacao.label("localizacao"),
+                percentual.label("percentual"),
+            )
+            .select_from(join_tree)
+            .where(
+                l.no_tp_localizacao.is_not(None),
+                f.nu_ano_censo.is_not(None),
+            )
+            .group_by(
+                f.nu_ano_censo,
+                l.co_tp_localizacao,
+                l.no_tp_localizacao,
+            )
+            .order_by(f.nu_ano_censo, l.no_tp_localizacao)
+        )
+
+        result = await self._session.execute(stmt)
+        return [_row_to_temporal(row) for row in result]
 
     async def _find_distinct(self, column) -> list:
         """SELECT DISTINCT column WHERE column IS NOT NULL ORDER BY column.

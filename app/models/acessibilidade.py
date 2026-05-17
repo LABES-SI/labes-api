@@ -16,12 +16,11 @@ acessibilidade = Table(
     Column("IN_BANHEIRO_PNE", Integer),
 )
 
-
 fato_acessibilidade = Table(
     "fato_acessibilidade",
     metadata,
-    Column("co_entidade", Integer),
     Column("nu_ano_censo", Integer),
+    Column("co_entidade", Integer),
     Column("in_banheiro_pne", Integer),
     Column("in_sala_atendimento_especial", Integer),
     Column("in_acessibilidade_rampas", Integer),
