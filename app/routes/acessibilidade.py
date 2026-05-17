@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_acessibilidade_service
-from app.schemas.acessibilidade import PainelResponse
+from app.schemas.acessibilidade import MapaResponse, PainelResponse
 from app.services.acessibilidade_service import AcessibilidadeService
 
 router = APIRouter(prefix="/acessibilidade", tags=["acessibilidade"])
@@ -17,6 +17,30 @@ MetricaAcessibilidade = Literal[
     "vao_livre",
     "banheiro_pne",
 ]
+
+
+VariavelAcessibilidade = Literal[
+    "in_banheiro_pne",
+    "in_sala_atendimento_especial",
+    "in_acessibilidade_rampas",
+    "in_acessibilidade_corrimao",
+    "in_acessibilidade_elevador",
+    "in_acessibilidade_pisos_tateis",
+    "in_acessibilidade_vao_livre",
+    "in_acessibilidade_inexistente",
+    "in_acessibilidade_sinal_tatil",
+    "in_acessibilidade_sinal_sonoro",
+    "in_acessibilidade_sinal_visual",
+    "in_acessibilidade_sinalizacao",
+    "in_prof_psicologo",
+    "in_prof_trad_libras",
+    "in_prof_revisor_braille",
+    "in_prof_assist_social",
+    "in_prof_fonaudiologo",
+]
+
+RedeEnsino = Literal["Federal", "Estadual", "Municipal", "Privada"]
+TpLocalizacao = Literal["Urbana", "Rural"]
 
 
 @router.get(
@@ -56,3 +80,49 @@ async def get_painel_acessibilidade(
         metrica=metrica,
     )
     return PainelResponse(**envelope)
+
+
+@router.get(
+    "/mapa",
+    response_model=MapaResponse,
+    summary="Pontos georreferenciados de escolas com score de acessibilidade",
+)
+async def get_mapa_acessibilidade(
+    ano: int | None = Query(
+        None,
+        description="Ano do censo escolar. Se omitido, retorna todos os anos.",
+    ),
+    municipios: list[str] | None = Query(
+        None,
+        description="Filtra por nome de município (parâmetro repetido).",
+    ),
+    variaveis: list[VariavelAcessibilidade] | None = Query(
+        None,
+        description=(
+            "Filtro AND: a escola precisa ter TODAS as variáveis marcadas = 1. "
+            "Use o parâmetro repetido: "
+            "?variaveis=in_acessibilidade_rampas&variaveis=in_acessibilidade_elevador."
+        ),
+    ),
+    rede_ensino: list[RedeEnsino] | None = Query(
+        None,
+        description="Rede(s) de ensino: Federal, Estadual, Municipal, Privada.",
+    ),
+    tp_localizacao: list[TpLocalizacao] | None = Query(
+        None,
+        description="Localização da escola: Urbana ou Rural.",
+    ),
+    service: AcessibilidadeService = Depends(get_acessibilidade_service),
+) -> MapaResponse:
+    """Retorna lista de escolas georreferenciadas (latitude/longitude) com
+    score (0-11) e classificação (Boa/Média/Baixa/Inexistente) de
+    acessibilidade calculados em SQL a partir de silver.fato_acessibilidade
+    e dimensões associadas."""
+    envelope = await service.build_mapa(
+        ano=ano,
+        municipios=municipios,
+        variaveis=variaveis,
+        rede_ensino=rede_ensino,
+        tp_localizacao=tp_localizacao,
+    )
+    return MapaResponse(**envelope)

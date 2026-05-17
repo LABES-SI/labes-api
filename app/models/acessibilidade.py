@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, MetaData, String, Table
+from sqlalchemy import Column, Integer, MetaData, Numeric, String, Table
 
 metadata = MetaData(schema="silver")
 
@@ -14,4 +14,67 @@ acessibilidade = Table(
     Column("IN_ACESSIBILIDADE_PISOS_TATEIS", Integer),
     Column("IN_ACESSIBILIDADE_VAO_LIVRE", Integer),
     Column("IN_BANHEIRO_PNE", Integer),
+)
+
+
+fato_acessibilidade = Table(
+    "fato_acessibilidade",
+    metadata,
+    Column("co_entidade", Integer),
+    Column("nu_ano_censo", Integer),
+    Column("in_banheiro_pne", Integer),
+    Column("in_sala_atendimento_especial", Integer),
+    Column("in_acessibilidade_rampas", Integer),
+    Column("in_acessibilidade_corrimao", Integer),
+    Column("in_acessibilidade_elevador", Integer),
+    Column("in_acessibilidade_pisos_tateis", Integer),
+    Column("in_acessibilidade_vao_livre", Integer),
+    Column("in_acessibilidade_inexistente", Integer),
+    Column("in_acessibilidade_sinal_tatil", Integer),
+    Column("in_acessibilidade_sinal_sonoro", Integer),
+    Column("in_acessibilidade_sinal_visual", Integer),
+    Column("in_acessibilidade_sinalizacao", Integer),
+    Column("in_prof_psicologo", Integer),
+    Column("in_prof_trad_libras", Integer),
+    Column("in_prof_revisor_braille", Integer),
+    Column("in_prof_assist_social", Integer),
+    Column("in_prof_fonaudiologo", Integer),
+)
+
+
+dim_entidade = Table(
+    "dim_entidade",
+    metadata,
+    Column("co_entidade", Integer),
+    Column("no_entidade", String),
+    Column("no_bairro", String),
+    Column("latitude", Numeric),
+    Column("longitude", Numeric),
+    Column("co_municipio", Integer),
+    Column("tp_dependencia", Integer),
+    Column("tp_localizacao", Integer),
+)
+
+
+dim_municipio = Table(
+    "dim_municipio",
+    metadata,
+    Column("co_municipio", Integer),
+    Column("no_municipio", String),
+)
+
+
+dim_tp_dependencia = Table(
+    "dim_tp_dependencia",
+    metadata,
+    Column("co_tp_dependencia", Integer),
+    Column("no_tp_dependencia", String),
+)
+
+
+dim_tp_localizacao = Table(
+    "dim_tp_localizacao",
+    metadata,
+    Column("co_tp_localizacao", Integer),
+    Column("no_tp_localizacao", String),
 )
