@@ -112,7 +112,7 @@ def main() -> Path:
         default=None,
         help="Repita para passar múltiplos municípios.",
     )
-    parser.add_argument("--metrica", default="banheiro_pne")
+    parser.add_argument("--metrica", default="in_banheiro_pne")
     args = parser.parse_args()
 
     return asyncio.run(

@@ -3,22 +3,26 @@ import json
 import pandas as pd
 import plotly.graph_objects as go
 
-from app.domain.acessibilidade import AcessibilidadeMunicipio
+from app.domain.acessibilidade import (
+    AcessibilidadeMunicipio,
+    AcessibilidadeTemporal,
+)
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
 
 METRIC_FIELDS: list[tuple[str, str]] = [
-    ("rampas", "Rampas"),
-    ("corrimao", "Corrimão"),
-    ("elevador", "Elevador"),
-    ("pisos_tateis", "Pisos Táteis"),
-    ("vao_livre", "Vão Livre"),
-    ("banheiro_pne", "Banheiro PNE"),
+    ("in_acessibilidade_rampas", "Rampas"),
+    ("in_acessibilidade_corrimao", "Corrimão"),
+    ("in_acessibilidade_elevador", "Elevador"),
+    ("in_acessibilidade_pisos_tateis", "Pisos Táteis"),
+    ("in_acessibilidade_vao_livre", "Vão Livre"),
+    ("in_banheiro_pne", "Banheiro PNE"),
 ]
 
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
 
 PAINEL_DESCRICAO = "painel_acessibilidade"
+ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_acessibilidade"
 TAB_PERCENT_ROW_HEIGHT_PX = 42
 TAB_PERCENT_HEADER_PX = 130
 TAB_PERCENT_VISIBLE_ROWS = 5
@@ -69,6 +73,36 @@ class AcessibilidadeService:
             },
         }
 
+    async def build_analise_temporal(self, metrica: str) -> dict:
+        """Monta o gráfico de evolução temporal por tipo de localização.
+
+        Uma linha por tipo de localização (urbana/rural), eixo X = ano censo,
+        eixo Y = percentual de escolas com a métrica selecionada.
+        """
+        if metrica not in METRICS_BY_KEY:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperado uma de: "
+                f"{sorted(METRICS_BY_KEY)}"
+            )
+        records = await self._repository.find_evolucao_por_localizacao(
+            metrica=metrica,
+        )
+        grafico = self._build_evolucao_temporal(records, metrica)
+        return {
+            "descricao": ANALISE_TEMPORAL_DESCRICAO,
+            "data": {
+                "graficos": {
+                    "evolucao_temporal_por_localizacao": grafico,
+                },
+                "dados_filtros": {
+                    "metricas": [
+                        {"chave": chave, "label": label}
+                        for chave, label in METRIC_FIELDS
+                    ],
+                },
+            },
+        }
+
     def _build_tab_percent(
         self,
         records: list[AcessibilidadeMunicipio],
@@ -97,12 +131,41 @@ class AcessibilidadeService:
             "plotly": json.loads(figure.to_json()),
         }
 
+    def _build_evolucao_temporal(
+        self,
+        records: list[AcessibilidadeTemporal],
+        metrica: str,
+    ) -> dict:
+        label = METRICS_BY_KEY[metrica]
+        titulo = f"Evolução temporal de {label} por tipo de localização"
+        df = self._temporal_to_dataframe(records)
+        if not df.empty:
+            df = df.sort_values(by=["localizacao", "ano"]).reset_index(drop=True)
+        figure = self._build_evolucao_temporal_figure(df, titulo)
+        return {
+            "tipo": "line",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
     @staticmethod
     def _records_to_dataframe(records: list[AcessibilidadeMunicipio]) -> pd.DataFrame:
         rows = [
             {
                 "municipio": r.municipio,
                 **{key: getattr(r, key) for key, _ in METRIC_FIELDS},
+            }
+            for r in records
+        ]
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def _temporal_to_dataframe(records: list[AcessibilidadeTemporal]) -> pd.DataFrame:
+        rows = [
+            {
+                "ano": r.ano,
+                "localizacao": r.localizacao,
+                "percentual": r.percentual,
             }
             for r in records
         ]
@@ -143,5 +206,30 @@ class AcessibilidadeService:
             showlegend=False,
             margin=dict(l=160, r=40, t=60, b=40),
             height=figure_height,
+        )
+        return fig
+
+    @staticmethod
+    def _build_evolucao_temporal_figure(
+        df: pd.DataFrame,
+        titulo: str,
+    ) -> go.Figure:
+        fig = go.Figure()
+        if not df.empty:
+            for localizacao in df["localizacao"].unique():
+                df_loc = df[df["localizacao"] == localizacao]
+                fig.add_trace(
+                    go.Scatter(
+                        x=df_loc["ano"].tolist(),
+                        y=df_loc["percentual"].tolist(),
+                        mode="lines+markers",
+                        name=localizacao,
+                    )
+                )
+        fig.update_layout(
+            title=titulo,
+            xaxis=dict(title="Ano", dtick=1),
+            yaxis=dict(title="Percentual de acessibilidade", ticksuffix="%"),
+            template="plotly_white",
         )
         return fig
