@@ -12,12 +12,12 @@ class AcessibilidadeMunicipio:
     """
 
     municipio: str
-    rampas: float
-    corrimao: float
-    elevador: float
-    pisos_tateis: float
-    vao_livre: float
-    banheiro_pne: float
+    in_acessibilidade_rampas: float
+    in_acessibilidade_corrimao: float
+    in_acessibilidade_elevador: float
+    in_acessibilidade_pisos_tateis: float
+    in_acessibilidade_vao_livre: float
+    in_banheiro_pne: float
 
 
 @dataclass(frozen=True)

@@ -11,12 +11,12 @@ from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
 
 METRIC_FIELDS: list[tuple[str, str]] = [
-    ("rampas", "Rampas"),
-    ("corrimao", "Corrimão"),
-    ("elevador", "Elevador"),
-    ("pisos_tateis", "Pisos Táteis"),
-    ("vao_livre", "Vão Livre"),
-    ("banheiro_pne", "Banheiro PNE"),
+    ("in_acessibilidade_rampas", "Rampas"),
+    ("in_acessibilidade_corrimao", "Corrimão"),
+    ("in_acessibilidade_elevador", "Elevador"),
+    ("in_acessibilidade_pisos_tateis", "Pisos Táteis"),
+    ("in_acessibilidade_vao_livre", "Vão Livre"),
+    ("in_banheiro_pne", "Banheiro PNE"),
 ]
 
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}

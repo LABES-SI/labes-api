@@ -1,5 +1,3 @@
-from typing import Literal
-
 from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_acessibilidade_service
@@ -9,14 +7,11 @@ from app.services.acessibilidade_service import AcessibilidadeService
 router = APIRouter(prefix="/acessibilidade", tags=["acessibilidade"])
 
 
-MetricaAcessibilidade = Literal[
-    "rampas",
-    "corrimao",
-    "elevador",
-    "pisos_tateis",
-    "vao_livre",
-    "banheiro_pne",
-]
+_METRICAS_ACEITAS = (
+    "in_acessibilidade_rampas, in_acessibilidade_corrimao, "
+    "in_acessibilidade_elevador, in_acessibilidade_pisos_tateis, "
+    "in_acessibilidade_vao_livre, in_banheiro_pne"
+)
 
 
 @router.get(
@@ -38,12 +33,9 @@ async def get_painel_acessibilidade(
             "Se omitido, o tab_percent cobre todos os municípios do recorte."
         ),
     ),
-    metrica: MetricaAcessibilidade = Query(
-        "banheiro_pne",
-        description=(
-            "Métrica de acessibilidade a plotar. Valores aceitos: "
-            "rampas, corrimao, elevador, pisos_tateis, vao_livre, banheiro_pne."
-        ),
+    metrica: str = Query(
+        "in_banheiro_pne",
+        description=f"Métrica de acessibilidade a plotar. Valores aceitos: {_METRICAS_ACEITAS}.",
     ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> PainelResponse:
@@ -64,12 +56,9 @@ async def get_painel_acessibilidade(
     summary="Evolução temporal da acessibilidade por tipo de localização",
 )
 async def get_analise_temporal_acessibilidade(
-    metrica: MetricaAcessibilidade = Query(
-        "rampas",
-        description=(
-            "Métrica de acessibilidade a plotar. Valores aceitos: "
-            "rampas, corrimao, elevador, pisos_tateis, vao_livre, banheiro_pne."
-        ),
+    metrica: str = Query(
+        "in_acessibilidade_rampas",
+        description=f"Métrica de acessibilidade a plotar. Valores aceitos: {_METRICAS_ACEITAS}.",
     ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> AnaliseTemporalResponse:

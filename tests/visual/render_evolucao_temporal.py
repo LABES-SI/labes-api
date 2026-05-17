@@ -90,7 +90,7 @@ async def _run(metrica: str) -> Path:
 
 def main() -> Path:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--metrica", default="rampas")
+    parser.add_argument("--metrica", default="in_acessibilidade_rampas")
     args = parser.parse_args()
 
     return asyncio.run(_run(metrica=args.metrica))

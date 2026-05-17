@@ -16,12 +16,12 @@ from app.models.acessibilidade import (
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
     return AcessibilidadeMunicipio(
         municipio=row.municipio,
-        rampas=float(row.rampas),
-        corrimao=float(row.corrimao),
-        elevador=float(row.elevador),
-        pisos_tateis=float(row.pisos_tateis),
-        vao_livre=float(row.vao_livre),
-        banheiro_pne=float(row.banheiro_pne),
+        in_acessibilidade_rampas=float(row.in_acessibilidade_rampas),
+        in_acessibilidade_corrimao=float(row.in_acessibilidade_corrimao),
+        in_acessibilidade_elevador=float(row.in_acessibilidade_elevador),
+        in_acessibilidade_pisos_tateis=float(row.in_acessibilidade_pisos_tateis),
+        in_acessibilidade_vao_livre=float(row.in_acessibilidade_vao_livre),
+        in_banheiro_pne=float(row.in_banheiro_pne),
     )
 
 
@@ -39,12 +39,12 @@ def _avg_pct(col):
 
 
 METRIC_TO_FATO_COLUMN = {
-    "rampas": f.c.in_acessibilidade_rampas,
-    "corrimao": f.c.in_acessibilidade_corrimao,
-    "elevador": f.c.in_acessibilidade_elevador,
-    "pisos_tateis": f.c.in_acessibilidade_pisos_tateis,
-    "vao_livre": f.c.in_acessibilidade_vao_livre,
-    "banheiro_pne": f.c.in_banheiro_pne,
+    "in_acessibilidade_rampas": f.c.in_acessibilidade_rampas,
+    "in_acessibilidade_corrimao": f.c.in_acessibilidade_corrimao,
+    "in_acessibilidade_elevador": f.c.in_acessibilidade_elevador,
+    "in_acessibilidade_pisos_tateis": f.c.in_acessibilidade_pisos_tateis,
+    "in_acessibilidade_vao_livre": f.c.in_acessibilidade_vao_livre,
+    "in_banheiro_pne": f.c.in_banheiro_pne,
 }
 
 
@@ -72,12 +72,12 @@ class AcessibilidadeRepository:
         stmt = (
             select(
                 t.c.NO_MUNICIPIO.label("municipio"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_RAMPAS).label("rampas"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_CORRIMAO).label("corrimao"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_ELEVADOR).label("elevador"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_PISOS_TATEIS).label("pisos_tateis"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_VAO_LIVRE).label("vao_livre"),
-                _avg_pct(t.c.IN_BANHEIRO_PNE).label("banheiro_pne"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_RAMPAS).label("in_acessibilidade_rampas"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_CORRIMAO).label("in_acessibilidade_corrimao"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_ELEVADOR).label("in_acessibilidade_elevador"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_PISOS_TATEIS).label("in_acessibilidade_pisos_tateis"),
+                _avg_pct(t.c.IN_ACESSIBILIDADE_VAO_LIVRE).label("in_acessibilidade_vao_livre"),
+                _avg_pct(t.c.IN_BANHEIRO_PNE).label("in_banheiro_pne"),
             )
             .where(t.c.NO_MUNICIPIO.is_not(None))
             .group_by(t.c.NO_MUNICIPIO)

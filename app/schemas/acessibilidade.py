@@ -26,7 +26,7 @@ class MunicipioFiltro(BaseModel):
 
 
 class MetricaFiltro(BaseModel):
-    chave: str = Field(..., description="Identificador interno da métrica (ex: 'rampas').")
+    chave: str = Field(..., description="Identificador interno da métrica (ex: 'in_acessibilidade_rampas').")
     label: str = Field(..., description="Label PT-BR para exibição (ex: 'Rampas').")
 
 
