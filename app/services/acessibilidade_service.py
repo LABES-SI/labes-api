@@ -22,6 +22,7 @@ METRIC_FIELDS: list[tuple[str, str]] = [
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
 
 PAINEL_DESCRICAO = "painel_acessibilidade"
+MAPA_DESCRICAO = "mapa_acessibilidade"
 ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_acessibilidade"
 TAB_PERCENT_ROW_HEIGHT_PX = 42
 TAB_PERCENT_HEADER_PX = 130
@@ -71,6 +72,29 @@ class AcessibilidadeService:
                     ],
                 },
             },
+        }
+
+    async def build_mapa(
+        self,
+        ano: int | None,
+        municipios: list[str] | None,
+        variaveis: list[str] | None,
+        rede_ensino: list[str] | None,
+        tp_localizacao: list[str] | None,
+    ) -> dict:
+        """Lista escolas georreferenciadas com score e classificação de
+        acessibilidade calculados em SQL. Sem transformação extra — apenas
+        envelopa a saída do repository."""
+        pontos = await self._repository.find_pontos_mapa_raw(
+            ano=ano,
+            municipios=municipios,
+            variaveis=variaveis,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
+        return {
+            "descricao": MAPA_DESCRICAO,
+            "data": {"pontos": pontos},
         }
 
     async def build_analise_temporal(self, metrica: str) -> dict:
