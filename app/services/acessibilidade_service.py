@@ -40,15 +40,10 @@ class AcessibilidadeService:
         - Sem `ano`: agrega em todos os censos.
         - `metrica` define qual das 6 dimensões é plotada.
         """
-        if municipios:
-            records = await self._repository.find_media_por_municipio(
-                ano=ano,
-                municipios=municipios,
-            )
-        else:
-            records = await self._repository.find_acessibilidade_todos_municipios(
-                ano=ano,
-            )
+        records = await self._repository.find_media_por_municipio(
+            ano=ano,
+            municipios=municipios,
+        )
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
