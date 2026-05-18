@@ -7,6 +7,8 @@ from app.domain.acessibilidade import (
     AcessibilidadeTemporal,
     #P1G4
     TotalEscolas,
+    #P1G5
+    AcessibilidadeDependencia
 )
 from app.models.acessibilidade import (
     dim_entidade,
@@ -73,6 +75,13 @@ def _row_to_total_escolas(row) -> TotalEscolas:
         total=int(row.total_escolas) if row.total_escolas is not None else 0,
     )
 
+#P1G5
+def _row_to_dependencia(row) -> AcessibilidadeDependencia:
+    return AcessibilidadeDependencia(
+        codigo_dependencia=int(row.codigo_dependencia),
+        dependencia=row.dependencia,
+        percentual=float(row.percentual) if row.percentual is not None else 0.0,
+    )
 
 class AcessibilidadeRepository:
     """
@@ -456,7 +465,9 @@ class AcessibilidadeRepository:
         Alimenta o card de KPI do painel geral (P1G4)
         """
         # Normaliza nomes curtos do front (ex: "rampas") para o padrão das colunas (ex: "in_acessibilidade_rampas")
-        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_rampas"
+        # CORREÇÃO (P1G5): Ajustado de 'rampas' estático para '{metrica}' dinâmico 
+        # para evitar que os cards de KPI mostrassem apenas dados de rampas.
+        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
         if metrica == "banheiro_pne":
             nome_coluna = "in_banheiro_pne"
 
@@ -503,3 +514,74 @@ class AcessibilidadeRepository:
         row = result.first()
 
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
+    
+    #P1G5
+    async def find_media_por_dependencia(
+        self,
+        *,
+        metrica: str,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> list[AcessibilidadeDependencia]:
+        """
+        Calcula o percentual de escolas que possuem a métrica de acessibilidade
+        igual a 1, agrupado por tipo de dependência administrativa (P1G5).
+        """
+        # Normaliza nomes curtos do front para o padrão das colunas
+        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
+        if metrica == "banheiro_pne":
+            nome_coluna = "in_banheiro_pne"
+
+        if nome_coluna not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(f"Métrica inválida: {metrica!r}")
+            
+        col = METRIC_TO_FATO_COLUMN[nome_coluna]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        # Agregação condicional
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        # Joins necessários para cruzar os dados com a dimensão de dependência
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .join(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        stmt = (
+            select(
+                d.co_tp_dependencia.label("codigo_dependencia"),
+                d.no_tp_dependencia.label("dependencia"),
+                percentual.label("percentual"),
+            )
+            .select_from(join_tree)
+            .group_by(d.co_tp_dependencia, d.no_tp_dependencia)
+        )
+
+        # Filtros dinâmicos herdados globalmente do painel
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+
+        result = await self._session.execute(stmt)
+        return [_row_to_dependencia(row) for row in result]

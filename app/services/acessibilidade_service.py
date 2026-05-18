@@ -8,6 +8,8 @@ from app.domain.acessibilidade import (
     AcessibilidadeTemporal,
     #P1G4
     TotalEscolas,
+    #P1G5
+    AcessibilidadeDependencia,
 )
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
@@ -86,12 +88,23 @@ class AcessibilidadeService:
             tp_localizacao=tp_localizacao,
         )
 
+        #P1G5: Busca dados agrupados por dependência administrativa
+        dep_records = await self._repository.find_media_por_dependencia(
+            metrica=variaveis[0],
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
+
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
         tab_percent = self._build_tab_percent(records, ano, variaveis)
         #P1G4
         card_total_escolas = self._build_total_escolas_card(total_escolas_record)
+        #P1G5
+        grafico_dependencia = self._build_dependencia_chart(dep_records, variaveis[0])
 
         return {
             "descricao": PAINEL_DESCRICAO,
@@ -100,6 +113,8 @@ class AcessibilidadeService:
                     "tab_percent_acessibilidade": tab_percent,
                     #P1G4
                     "card_total_escolas": card_total_escolas,
+                    #P1G5
+                    "grafico_dependencia_acessibilidade": grafico_dependencia,
                 },
                 "dados_filtros": {
                     "municipios": [
@@ -316,5 +331,56 @@ class AcessibilidadeService:
                 title={"text": "Total de Escolas"},
                 number={"font": {"size": 60}}
             )
+        )
+        return fig
+    
+    #P1G5
+    def _build_dependencia_chart(
+        self,
+        records: list[AcessibilidadeDependencia],
+        metrica: str,
+    ) -> dict:
+        """Estrutura o envelope JSON do gráfico de dependência administrativa (P1G5)."""
+        # Ordenação decrescente pelo percentual
+        sorted_records = sorted(records, key=lambda x: x.percentual, reverse=True)
+        
+        x_data = [r.dependencia for r in sorted_records]
+        y_data = [r.percentual for r in sorted_records]
+        
+        # Mantém o título
+        titulo = 'Percentual de Recursos de Acessibilidade nas Escolas do Pará por Tipo de Localização'
+        figure = self._build_dependencia_figure(x_data, y_data, titulo)
+        
+        return {
+            "tipo": "bar",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
+    @staticmethod
+    def _build_dependencia_figure(
+        x_data: list[str],
+        y_data: list[float],
+        titulo: str,
+    ) -> go.Figure:
+        """Gera o objeto gráfico do Plotly para barras verticais."""
+        import plotly.express as px
+        
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=x_data,
+                y=y_data,
+                text=y_data,
+                texttemplate="%{text:.2f}%",
+                marker_color=px.colors.sequential.Blues_r  # Paleta Blues_r
+            )
+        )
+        fig.update_layout(
+            title=titulo,
+            yaxis_title="Percentual de Escolas",
+            xaxis_title="",
+            showlegend=False,
+            template="plotly_white"
         )
         return fig
