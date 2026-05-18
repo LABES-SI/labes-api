@@ -495,11 +495,11 @@ class AcessibilidadeRepository:
         if municipios:
             stmt = stmt.where(m.no_municipio.in_(municipios))
         if rede_ensino:
-            stmt = stmt.where(d.no_tp_dependecia.in_(rede_ensino))
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
         
-        result = await self._session_execute(stmt)
+        result = await self._session.execute(stmt)
         row = result.first()
 
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
