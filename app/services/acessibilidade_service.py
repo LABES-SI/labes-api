@@ -6,8 +6,6 @@ import plotly.graph_objects as go
 from app.domain.acessibilidade import (
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
-    #P1G4
-    TotalEscolas,
 )
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
@@ -76,30 +74,16 @@ class AcessibilidadeService:
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
         )
-
-        # P1G4: Busca o total absoluto baseado na mesma métrica e filtros
-        total_escolas_record = await self._repository.find_total_escolas(
-            metrica=variaveis[0],
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
-
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
         tab_percent = self._build_tab_percent(records, ano, variaveis)
-        #P1G4
-        card_total_escolas = self._build_total_escolas_card(total_escolas_record)
 
         return {
             "descricao": PAINEL_DESCRICAO,
             "data": {
                 "graficos": {
                     "tab_percent_acessibilidade": tab_percent,
-                    #P1G4
-                    "card_total_escolas": card_total_escolas,
                 },
                 "dados_filtros": {
                     "municipios": [
@@ -292,29 +276,5 @@ class AcessibilidadeService:
             xaxis=dict(title="Ano", dtick=1),
             yaxis=dict(title="Percentual de acessibilidade", ticksuffix="%"),
             template="plotly_white",
-        )
-        return fig
-    
-    def _build_total_escolas_card(self, total_record: TotalEscolas) -> dict:
-        """Envelopa a figura do indicador no formato esperado pelo contrato da API"""
-        titulo = "Total de Escolas"
-        figure = self._build_total_escolas_figure(total_record.total)
-
-        return{
-            "tipo": "indicator",
-            "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
-        }
-    
-    @staticmethod
-    def _build_total_escolas_figure(total: int) -> go.Figure:
-        """Constrói o componente de KPI (Indicator) idêntico ao protótipo do notebook"""
-        fig = go.Figure(
-            go.Indicator(
-                mode="number",
-                value=total,
-                title={"text": "Total de Escolas"},
-                number={"font": {"size": 60}}
-            )
         )
         return fig

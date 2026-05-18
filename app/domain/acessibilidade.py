@@ -55,17 +55,3 @@ class AcessibilidadeMapaPonto:
     no_tp_localizacao: str | None
     score_acessibilidade: int
     classificacao_acessibilidade: str
-
-# P1G4
-@dataclass(frozen=True)
-class TotalEscolas:
-    """
-    Quantidade total de escolas que atendem aos filtros selecionados e possuem
-    o recurso de acessibilidade física ativo (=1). Alimenta o card KPI de 
-    destaque no topo do painel
-
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade.
-    Granularidade: Um único valor numérico interiro
-    """
-
-    total: int
