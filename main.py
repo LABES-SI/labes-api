@@ -9,7 +9,7 @@ from app.routes.health import router as health_router
 
 configure_logging()
 
-app = FastAPI(title="labes-api")
+app = FastAPI(title="labes-api", version="0.3.0")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_exception_handler(AppError, app_error_handler)
