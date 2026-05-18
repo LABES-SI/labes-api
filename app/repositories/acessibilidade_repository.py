@@ -5,6 +5,8 @@ from app.domain.acessibilidade import (
     AcessibilidadeMapaPonto,
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
+    #P1G4
+    TotalEscolas,
 )
 from app.models.acessibilidade import (
     dim_entidade,
@@ -63,6 +65,12 @@ def _row_to_mapa_ponto(row) -> AcessibilidadeMapaPonto:
         no_tp_localizacao=row.no_tp_localizacao,
         score_acessibilidade=int(row.score_acessibilidade),
         classificacao_acessibilidade=row.classificacao_acessibilidade,
+    )
+
+#P1G4
+def _row_to_total_escolas(row) -> TotalEscolas:
+    return TotalEscolas(
+        total=int(row.total_escolas) if row.total_escolas is not None else 0,
     )
 
 
@@ -430,3 +438,68 @@ class AcessibilidadeRepository:
         )
         result = await self._session.execute(stmt)
         return [row[0] for row in result]
+
+    #P1G4
+    async def find_total_escolas(
+        self,
+        *,
+        metrica: str,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> TotalEscolas:
+        """
+        Calcula a quantidade absoluta de escolas (COUNT) que possuem o indicador
+        de métrica selecionada igual a 1, aplicando os filtros dinâmicos do painel.
+
+        Alimenta o card de KPI do painel geral (P1G4)
+        """
+        # Normaliza nomes curtos do front (ex: "rampas") para o padrão das colunas (ex: "in_acessibilidade_rampas")
+        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_rampas"
+        if metrica == "banheiro_pne":
+            nome_coluna = "in_banheiro_pne"
+
+        if nome_coluna not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperando um de: "
+                f"{sorted(METRIC_TO_FATO_COLUMN.keys())}"
+            )
+        
+        col = METRIC_TO_FATO_COLUMN[nome_coluna]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        # Árvore de JOINS idêntica ao padrão do restante do arquivo
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        # Montagem do SELECT COUNT(*) executando o filtro da métrica ativa (=1)
+        stmt = (
+            select(func.count(f.co_entidade).label("total_escolas"))
+            .select_from(join_tree)
+            .where(col == 1)
+        )
+
+        # Aplicação dos filtros opcionais e dinâmicos do painel
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+        
+        result = await self._session.execute(stmt)
+        row = result.first()
+
+        return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
