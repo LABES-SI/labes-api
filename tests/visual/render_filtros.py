@@ -56,7 +56,7 @@ async def _run() -> None:
             print(f"Por município ({len(municipios)}):")
             for _, nome in municipios:
                 painel = await service.build_painel(
-                    ano=None, municipios=[nome], metrica=DEFAULT_METRICA
+                    ano=None, municipios=[nome], variaveis=[DEFAULT_METRICA]
                 )
                 out = OUT_DIR / "por_municipio" / f"{_slugify(nome)}.html"
                 n = _write_html(painel, out)
@@ -65,7 +65,7 @@ async def _run() -> None:
             print(f"\nPor ano ({len(anos)}):")
             for ano in anos:
                 painel = await service.build_painel(
-                    ano=ano, municipios=None, metrica=DEFAULT_METRICA
+                    ano=ano, municipios=None, variaveis=[DEFAULT_METRICA]
                 )
                 out = OUT_DIR / "por_ano" / f"{ano}.html"
                 n = _write_html(painel, out)
@@ -74,7 +74,7 @@ async def _run() -> None:
             print(f"\nPor métrica ({len(METRIC_FIELDS)}):")
             for chave, label in METRIC_FIELDS:
                 painel = await service.build_painel(
-                    ano=None, municipios=None, metrica=chave
+                    ano=None, municipios=None, variaveis=[chave]
                 )
                 out = OUT_DIR / "por_metrica" / f"{chave}.html"
                 n = _write_html(painel, out)

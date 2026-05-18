@@ -63,9 +63,19 @@ async def get_painel_acessibilidade(
             "Se omitido, o tab_percent cobre todos os municípios do recorte."
         ),
     ),
-    metrica: str = Query(
-        "in_banheiro_pne",
-        description=f"Métrica de acessibilidade a plotar. Valores aceitos: {_METRICAS_ACEITAS}.",
+    variaveis: list[VariavelAcessibilidade] | None = Query(
+        None,
+        description=(
+            "Filtro AND: escolas precisam ter TODAS as variáveis marcadas = 1."
+        ),
+    ),
+    rede_ensino: list[RedeEnsino] | None = Query(
+        None,
+        description="Rede(s) de ensino: Federal, Estadual, Municipal, Privada.",
+    ),
+    tp_localizacao: list[TpLocalizacao] | None = Query(
+        None,
+        description="Localização da escola: Urbana ou Rural.",
     ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> PainelResponse:
@@ -75,7 +85,9 @@ async def get_painel_acessibilidade(
     envelope = await service.build_painel(
         ano=ano,
         municipios=municipios,
-        metrica=metrica,
+        rede_ensino=rede_ensino,
+        tp_localizacao=tp_localizacao,
+        variaveis=variaveis,
     )
     return PainelResponse(**envelope)
 

@@ -7,7 +7,6 @@ from app.domain.acessibilidade import (
     AcessibilidadeTemporal,
 )
 from app.models.acessibilidade import (
-    acessibilidade as t,
     dim_entidade,
     dim_municipio,
     dim_tp_dependencia,
@@ -37,13 +36,9 @@ METRIC_TO_FATO_COLUMN = {
 
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
     return AcessibilidadeMunicipio(
+        codigo_municipio=int(row.codigo_municipio),
         municipio=row.municipio,
-        in_acessibilidade_rampas=float(row.in_acessibilidade_rampas),
-        in_acessibilidade_corrimao=float(row.in_acessibilidade_corrimao),
-        in_acessibilidade_elevador=float(row.in_acessibilidade_elevador),
-        in_acessibilidade_pisos_tateis=float(row.in_acessibilidade_pisos_tateis),
-        in_acessibilidade_vao_livre=float(row.in_acessibilidade_vao_livre),
-        in_banheiro_pne=float(row.in_banheiro_pne),
+        percentual=float(row.percentual) if row.percentual is not None else 0.0,
     )
 
 
@@ -71,21 +66,13 @@ def _row_to_mapa_ponto(row) -> AcessibilidadeMapaPonto:
     )
 
 
-def _avg_pct(col):
-    return func.round((func.avg(col).cast(Numeric) * 100), 1)
-
-
 class AcessibilidadeRepository:
     """
-    Acessa silver.acessibilidade no warehouse.
+    Acessa o domínio de acessibilidade no warehouse silver.
 
-    Tabela: silver.acessibilidade
-    Owner do mart: squad de dados
-    Granularidade: uma linha por escola por ano censo.
-
-    AVG ignora NULL automaticamente — denominadores podem diferir
-    por métrica, o que é o comportamento esperado para este tipo de
-    indicador de censo.
+    Tabela fato: silver.fato_acessibilidade (uma linha por escola por
+    ano censo) + dimensões (entidade, município, tp_dependência,
+    tp_localização). Owner do mart: squad de dados.
     """
 
     def __init__(self, session: AsyncSession):
@@ -93,49 +80,129 @@ class AcessibilidadeRepository:
 
     async def find_media_por_municipio(
         self,
+        *,
+        variaveis: list[str] | None,
         ano: int | None,
         municipios: list[str] | None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
     ) -> list[AcessibilidadeMunicipio]:
+        """
+        Percentual de escolas por município que possuem o indicador
+        `metrica` = 1, sobre o total de escolas do município no recorte.
+
+        - Numerador: COUNT(co_entidade) com `metrica` = 1 + filtros de população.
+        - Denominador (subconsulta correlacionada): COUNT(co_entidade) do
+          mesmo município/ano (+ rede_ensino/tp_localização se passados),
+          sem o filtro da métrica.
+        - `municipios` filtra apenas a saída (cada município é independente
+          via correlação `e_sub.co_municipio = e.co_municipio`).
+        """
+        # `variaveis` is a list of indicator column names (AND semantics).
+        if not variaveis:
+            raise ValueError("É necessário passar ao menos uma variável para o painel")
+        metric_cols = []
+        for nome in variaveis:
+            col = VARIAVEIS_ACESSIBILIDADE.get(nome)
+            if col is None:
+                raise ValueError(f"Variável inválida: {nome!r}. Esperado uma de: {sorted(VARIAVEIS_ACESSIBILIDADE)}")
+            metric_cols.append(col)
+
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        f_sub = fato_acessibilidade.alias("f_sub")
+        e_sub = dim_entidade.alias("e_sub")
+        d_sub = dim_tp_dependencia.alias("d_sub")
+        l_sub = dim_tp_localizacao.alias("l_sub")
+
+        denom_join = (
+            f_sub
+            .outerjoin(e_sub, f_sub.c.co_entidade == e_sub.c.co_entidade)
+            .outerjoin(d_sub, e_sub.c.tp_dependencia == d_sub.c.co_tp_dependencia)
+            .outerjoin(l_sub, e_sub.c.tp_localizacao == l_sub.c.co_tp_localizacao)
+        )
+        denom_filters = [e_sub.c.co_municipio == e.co_municipio]
+        if ano is not None:
+            denom_filters.append(f_sub.c.nu_ano_censo == ano)
+        if rede_ensino:
+            denom_filters.append(d_sub.c.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            denom_filters.append(l_sub.c.no_tp_localizacao.in_(tp_localizacao))
+
+        denominador = (
+            select(func.count(f_sub.c.co_entidade))
+            .select_from(denom_join)
+            .where(*denom_filters)
+            .correlate(fato_acessibilidade, dim_entidade)
+            .scalar_subquery()
+        )
+
+        percentual = func.round(
+            (
+                func.count(f.co_entidade) * literal(100.0)
+                / func.nullif(denominador, 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        join_tree = (
+            fato_acessibilidade
+            .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
         stmt = (
             select(
-                t.c.NO_MUNICIPIO.label("municipio"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_RAMPAS).label("in_acessibilidade_rampas"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_CORRIMAO).label("in_acessibilidade_corrimao"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_ELEVADOR).label("in_acessibilidade_elevador"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_PISOS_TATEIS).label("in_acessibilidade_pisos_tateis"),
-                _avg_pct(t.c.IN_ACESSIBILIDADE_VAO_LIVRE).label("in_acessibilidade_vao_livre"),
-                _avg_pct(t.c.IN_BANHEIRO_PNE).label("in_banheiro_pne"),
+                e.co_municipio.label("codigo_municipio"),
+                m.no_municipio.label("municipio"),
+                percentual.label("percentual"),
             )
-            .where(t.c.NO_MUNICIPIO.is_not(None))
-            .group_by(t.c.NO_MUNICIPIO)
-            .order_by(t.c.NO_MUNICIPIO)
+            .select_from(join_tree)
+            .where(*[c == 1 for c in metric_cols], m.no_municipio.is_not(None))
+            .group_by(e.co_municipio, m.no_municipio)
+            .order_by(m.no_municipio)
         )
 
         if ano is not None:
-            stmt = stmt.where(t.c.NU_ANO_CENSO == ano)
+            stmt = stmt.where(f.nu_ano_censo == ano)
         if municipios:
-            stmt = stmt.where(t.c.NO_MUNICIPIO.in_(municipios))
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
 
         result = await self._session.execute(stmt)
         return [_row_to_municipio(row) for row in result]
 
     async def find_municipios_disponiveis(self) -> list[tuple[int, str]]:
-        """Lista (codigo, nome) de todos os municípios presentes na tabela."""
+        """Lista (codigo, nome) de todos os municípios com escolas."""
+        e = dim_entidade.c
+        m = dim_municipio.c
         stmt = (
             select(
-                t.c.CO_MUNICIPIO.label("codigo"),
-                t.c.NO_MUNICIPIO.label("nome"),
+                m.co_municipio.label("codigo"),
+                m.no_municipio.label("nome"),
             )
-            .where(t.c.CO_MUNICIPIO.is_not(None), t.c.NO_MUNICIPIO.is_not(None))
+            .select_from(
+                dim_municipio.join(dim_entidade, e.co_municipio == m.co_municipio)
+            )
+            .where(m.co_municipio.is_not(None), m.no_municipio.is_not(None))
             .distinct()
-            .order_by(t.c.NO_MUNICIPIO)
+            .order_by(m.no_municipio)
         )
         result = await self._session.execute(stmt)
         return [(int(row.codigo), row.nome) for row in result]
 
     async def find_anos_disponiveis(self) -> list[int]:
-        """Lista de anos do censo presentes na tabela, em ordem crescente."""
-        return [int(v) for v in await self._find_distinct(t.c.NU_ANO_CENSO)]
+        """Lista de anos do censo presentes em fato_acessibilidade."""
+        return [int(v) for v in await self._find_distinct(fato_acessibilidade.c.nu_ano_censo)]
 
     def _build_pontos_mapa_stmt(
         self,

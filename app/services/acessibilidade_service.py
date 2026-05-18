@@ -11,12 +11,23 @@ from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
 
 METRIC_FIELDS: list[tuple[str, str]] = [
+    ("in_banheiro_pne", "Banheiro PNE"),
+    ("in_sala_atendimento_especial", "Sala de Atendimento Especial"),
     ("in_acessibilidade_rampas", "Rampas"),
     ("in_acessibilidade_corrimao", "Corrimão"),
     ("in_acessibilidade_elevador", "Elevador"),
     ("in_acessibilidade_pisos_tateis", "Pisos Táteis"),
     ("in_acessibilidade_vao_livre", "Vão Livre"),
-    ("in_banheiro_pne", "Banheiro PNE"),
+    ("in_acessibilidade_inexistente", "Acessibilidade Inexistente"),
+    ("in_acessibilidade_sinal_tatil", "Sinalização Tátil"),
+    ("in_acessibilidade_sinal_sonoro", "Sinalização Sonora"),
+    ("in_acessibilidade_sinal_visual", "Sinalização Visual"),
+    ("in_acessibilidade_sinalizacao", "Sinalização Geral"),
+    ("in_prof_psicologo", "Psicólogo"),
+    ("in_prof_trad_libras", "Tradutor/Intérprete de Libras"),
+    ("in_prof_revisor_braille", "Revisor de Braille"),
+    ("in_prof_assist_social", "Assistente Social"),
+    ("in_prof_fonaudiologo", "Fonoaudiólogo"),
 ]
 
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
@@ -37,22 +48,36 @@ class AcessibilidadeService:
         self,
         ano: int | None,
         municipios: list[str] | None,
-        metrica: str,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+        variaveis: list[str] | None = None,
     ) -> dict:
         """Monta o painel de acessibilidade: gráfico + opções de filtro.
 
         - Sem `municipios`: o tab_percent cobre todos os municípios do recorte.
         - Sem `ano`: agrega em todos os censos.
-        - `metrica` define qual das 6 dimensões é plotada.
+        - `variaveis` define o indicador cuja proporção será plotada (escolas
+          do município com `variaveis = 1` sobre o total).
+        - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
+          aos numerador e denominador).
         """
+        if not variaveis:
+            variaveis = [METRIC_FIELDS[0][0]]
+        for v in variaveis:
+            if v not in METRICS_BY_KEY:
+                raise ValueError(f"Variável inválida: {v!r}. Esperado uma de: {sorted(METRICS_BY_KEY)}")
+
         records = await self._repository.find_media_por_municipio(
+            variaveis=variaveis,
             ano=ano,
             municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
         )
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
-        tab_percent = self._build_tab_percent(records, ano, metrica)
+        tab_percent = self._build_tab_percent(records, ano, variaveis)
 
         return {
             "descricao": PAINEL_DESCRICAO,
@@ -131,24 +156,20 @@ class AcessibilidadeService:
         self,
         records: list[AcessibilidadeMunicipio],
         ano: int | None,
-        metrica: str,
+        variaveis: list[str],
     ) -> dict:
-        if metrica not in METRICS_BY_KEY:
-            raise ValueError(
-                f"Métrica inválida: {metrica!r}. Esperado uma de: "
-                f"{sorted(METRICS_BY_KEY)}"
-            )
         df = self._records_to_dataframe(records)
         if not df.empty:
             df = df.sort_values(
-                by=[metrica, "municipio"],
+                by=["percentual", "municipio"],
                 ascending=[False, True],
                 kind="mergesort",
             ).reset_index(drop=True)
         recorte = f"Censo {ano}" if ano is not None else "Todos os censos"
-        label = METRICS_BY_KEY[metrica]
+        labels = [METRICS_BY_KEY.get(v, v) for v in variaveis]
+        label = ", ".join(labels)
         titulo = f"Percentual de escolas com {label} por município — {recorte}"
-        figure = self._build_tab_percent_figure(df, metrica, titulo)
+        figure = self._build_tab_percent_figure(df, "percentual", titulo)
         return {
             "tipo": "bar",
             "titulo": titulo,
@@ -177,7 +198,7 @@ class AcessibilidadeService:
         rows = [
             {
                 "municipio": r.municipio,
-                **{key: getattr(r, key) for key, _ in METRIC_FIELDS},
+                "percentual": r.percentual,
             }
             for r in records
         ]

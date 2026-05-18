@@ -54,7 +54,9 @@ SCROLL_TEMPLATE = """<!doctype html>
 async def _build_painel(
     ano: int | None,
     municipios: list[str] | None,
-    metrica: str,
+    variaveis: list[str] | None = None,
+    rede_ensino: list[str] | None = None,
+    tp_localizacao: list[str] | None = None,
 ) -> dict:
     async with SessionLocal() as session:
         repository = AcessibilidadeRepository(session)
@@ -62,13 +64,17 @@ async def _build_painel(
         return await service.build_painel(
             ano=ano,
             municipios=municipios,
-            metrica=metrica,
+            variaveis=variaveis,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
         )
 
 
-async def _run(ano: int | None, municipios: list[str] | None, metrica: str) -> Path:
+async def _run(
+    ano: int | None, municipios: list[str] | None, variaveis: list[str] | None
+) -> Path:
     try:
-        painel = await _build_painel(ano=ano, municipios=municipios, metrica=metrica)
+        painel = await _build_painel(ano=ano, municipios=municipios, variaveis=variaveis)
     finally:
         await async_engine.dispose()
 
@@ -112,11 +118,37 @@ def main() -> Path:
         default=None,
         help="Repita para passar múltiplos municípios.",
     )
-    parser.add_argument("--metrica", default="in_banheiro_pne")
+    DEFAULT_METRICA = "in_banheiro_pne"
+    parser.add_argument(
+        "--variavel",
+        action="append",
+        dest="variaveis",
+        default=None,
+        help="Repita para passar múltiplas variáveis (filtro AND).",
+    )
+    parser.add_argument(
+        "--rede_ensino",
+        action="append",
+        dest="rede_ensino",
+        default=None,
+        help="Repita para passar múltiplas redes de ensino.",
+    )
+    parser.add_argument(
+        "--tp_localizacao",
+        action="append",
+        dest="tp_localizacao",
+        default=None,
+        help="Repita para passar múltiplas localizações (Urbana/Rural).",
+    )
     args = parser.parse_args()
 
+    variaveis = args.variaveis or [DEFAULT_METRICA]
     return asyncio.run(
-        _run(ano=args.ano, municipios=args.municipios, metrica=args.metrica)
+        _run(
+            ano=args.ano,
+            municipios=args.municipios,
+            variaveis=variaveis,
+        )
     )
 
 
