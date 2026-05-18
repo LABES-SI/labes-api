@@ -69,3 +69,18 @@ class TotalEscolas:
     """
 
     total: int
+
+#P1G5
+@dataclass(frozen=True)
+class AcessibilidadeDependencia:
+    """
+    Percentual de escolas por tipo de dependência administrativa com a métrica 
+    de acessibilidade selecionada = 1, sobre o total de escolas daquela dependência 
+    no recorte filtrado.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade + silver.dim_tp_dependencia.
+    """
+
+    codigo_dependencia: int
+    dependencia: str
+    percentual: float
