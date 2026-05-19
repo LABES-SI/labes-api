@@ -39,7 +39,7 @@ HTML_TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
-  <div class="chart-wrapper">{plot_div}</div>
+{plot_div}
 </body>
 </html>
 """
@@ -58,33 +58,35 @@ async def _run(metrica: str) -> Path:
     finally:
         await async_engine.dispose()
 
-    grafico = envelope["data"]["graficos"]["evolucao_temporal_por_localizacao"]
-    plotly_payload = grafico["plotly"]
-
-    figure = pio.from_json(json.dumps(plotly_payload))
-
+    graficos = envelope["data"]["graficos"]
     out_dir = Path(__file__).parent / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "evolucao_temporal.html"
 
-    plot_div = pio.to_html(
-        figure,
-        include_plotlyjs=False,
-        full_html=False,
-        config={"responsive": True},
-    )
+    plot_divs = []
+    for chave, grafico in graficos.items():
+        plotly_payload = grafico["plotly"]
+        figure = pio.from_json(json.dumps(plotly_payload))
+        plot_div = pio.to_html(
+            figure,
+            include_plotlyjs=False,
+            full_html=False,
+            config={"responsive": True},
+        )
+        plot_divs.append(
+            f'<div class="chart-wrapper"><h3>{chave}</h3>{plot_div}</div>'
+        )
+
+        n_traces = len(plotly_payload["data"])
+        n_pontos = sum(len(t.get("x", [])) for t in plotly_payload["data"])
+        print(f"[{chave}] título: {grafico['titulo']} — séries: {n_traces} — pontos: {n_pontos}")
+
     html = HTML_TEMPLATE.format(
-        titulo=grafico["titulo"],
-        plot_div=plot_div,
+        titulo="Evolução Temporal — Acessibilidade",
+        plot_div="\n".join(plot_divs),
     )
     out_file.write_text(html, encoding="utf-8")
-
-    n_traces = len(plotly_payload["data"])
-    n_pontos = sum(len(trace.get("x", [])) for trace in plotly_payload["data"])
-    print(f"Gráfico renderizado em: {out_file}")
-    print(f"Título: {grafico['titulo']}")
-    print(f"Séries (tipos de localização): {n_traces}")
-    print(f"Pontos totais (ano × localização): {n_pontos}")
+    print(f"Gráficos renderizados em: {out_file}")
     return out_file
 
 

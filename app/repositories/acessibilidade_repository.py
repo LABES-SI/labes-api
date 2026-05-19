@@ -8,7 +8,9 @@ from app.domain.acessibilidade import (
     #P1G4
     TotalEscolas,
     #P1G5
-    AcessibilidadeDependencia
+    AcessibilidadeDependencia,
+    #P1G6
+    AcessibilidadeTemporalDependencia,
 )
 from app.models.acessibilidade import (
     dim_entidade,
@@ -89,6 +91,15 @@ def _row_to_total_escolas(row) -> TotalEscolas:
 #P1G5
 def _row_to_dependencia(row) -> AcessibilidadeDependencia:
     return AcessibilidadeDependencia(
+        codigo_dependencia=int(row.codigo_dependencia),
+        dependencia=row.dependencia,
+        percentual=float(row.percentual) if row.percentual is not None else 0.0,
+    )
+
+#P1G6
+def _row_to_temporal_dependencia(row) -> AcessibilidadeTemporalDependencia:
+    return AcessibilidadeTemporalDependencia(
+        ano=int(row.ano),
         codigo_dependencia=int(row.codigo_dependencia),
         dependencia=row.dependencia,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
@@ -596,3 +607,64 @@ class AcessibilidadeRepository:
 
         result = await self._session.execute(stmt)
         return [_row_to_dependencia(row) for row in result]
+
+    #P1G6
+    async def find_evolucao_por_dependencia(
+        self,
+        metrica: str,
+    ) -> list[AcessibilidadeTemporalDependencia]:
+        """Percentual da métrica por (ano censo, tipo de dependência
+        administrativa).
+
+        Equivale à query original com subquery correlacionada, reescrita
+        aqui via agregação condicional (COUNT(CASE WHEN...)) seguindo o
+        mesmo padrão de find_evolucao_por_localizacao — generalizada
+        para qualquer métrica do whitelist.
+        """
+        if metrica not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperado uma de: "
+                f"{sorted(METRIC_TO_FATO_COLUMN)}"
+            )
+        col = METRIC_TO_FATO_COLUMN[metrica]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        d = dim_tp_dependencia.c
+
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        join_tree = (
+            fato_acessibilidade
+            .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+        )
+
+        stmt = (
+            select(
+                f.nu_ano_censo.label("ano"),
+                d.co_tp_dependencia.label("codigo_dependencia"),
+                d.no_tp_dependencia.label("dependencia"),
+                percentual.label("percentual"),
+            )
+            .select_from(join_tree)
+            .where(
+                d.no_tp_dependencia.is_not(None),
+                f.nu_ano_censo.is_not(None),
+            )
+            .group_by(
+                f.nu_ano_censo,
+                d.co_tp_dependencia,
+                d.no_tp_dependencia,
+            )
+            .order_by(f.nu_ano_censo, d.no_tp_dependencia)
+        )
+
+        result = await self._session.execute(stmt)
+        return [_row_to_temporal_dependencia(row) for row in result]
