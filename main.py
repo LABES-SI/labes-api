@@ -10,7 +10,7 @@ from app.routes.health import router as health_router
 
 configure_logging()
 
-app = FastAPI(title="labes-api", version="0.3.0")
+app = FastAPI(title="labes-api", version="0.7.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
