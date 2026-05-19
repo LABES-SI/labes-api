@@ -66,28 +66,34 @@ class AcessibilidadeService:
 
         - Sem `municipios`: o tab_percent cobre todos os municípios do recorte.
         - Sem `ano`: agrega em todos os censos.
-        - `variaveis` define o indicador cuja proporção será plotada (escolas
-          do município com `variaveis = 1` sobre o total).
+        - `variaveis`: define quais indicadores entram no recorte.
+          • Sem filtro (None/vazio): usa OR sobre TODAS as 17 variáveis —
+            escola conta se tiver QUALQUER variável = 1.
+          • Com filtro: usa AND — escola precisa ter TODAS as variáveis = 1.
         - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
           aos numerador e denominador).
         """
-        if not variaveis:
-            variaveis = [METRIC_FIELDS[0][0]]
-        for v in variaveis:
-            if v not in METRICS_BY_KEY:
-                raise ValueError(f"Variável inválida: {v!r}. Esperado uma de: {sorted(METRICS_BY_KEY)}")
+        combine_or = not variaveis
+        if combine_or:
+            variaveis = [chave for chave, _ in METRIC_FIELDS]
+        else:
+            for v in variaveis:
+                if v not in METRICS_BY_KEY:
+                    raise ValueError(f"Variável inválida: {v!r}. Esperado uma de: {sorted(METRICS_BY_KEY)}")
 
         records = await self._repository.find_media_por_municipio(
             variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
         )
 
-        # P1G4: Busca o total absoluto baseado na mesma métrica e filtros
+        # P1G4: Busca o total absoluto baseado nas mesmas variáveis e filtros
         total_escolas_record = await self._repository.find_total_escolas(
-            metrica=variaveis[0],
+            variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -96,7 +102,8 @@ class AcessibilidadeService:
 
         #P1G5: Busca dados agrupados por dependência administrativa
         dep_records = await self._repository.find_media_por_dependencia(
-            metrica=variaveis[0],
+            variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -104,7 +111,8 @@ class AcessibilidadeService:
         )
 
         loc_records = await self._repository.find_media_por_localizacao(
-            metrica=variaveis[0],
+            variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -114,7 +122,7 @@ class AcessibilidadeService:
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
-        tab_percent = self._build_tab_percent(records, ano, variaveis)
+        tab_percent = self._build_tab_percent(records, ano, variaveis, combine_or)
         #P1G4
         card_total_escolas = self._build_total_escolas_card(total_escolas_record)
         #P1G5
@@ -216,6 +224,7 @@ class AcessibilidadeService:
         records: list[AcessibilidadeMunicipio],
         ano: int | None,
         variaveis: list[str],
+        combine_or: bool = False,
     ) -> dict:
         df = self._records_to_dataframe(records)
         if not df.empty:
@@ -225,8 +234,11 @@ class AcessibilidadeService:
                 kind="mergesort",
             ).reset_index(drop=True)
         recorte = f"Censo {ano}" if ano is not None else "Todos os censos"
-        labels = [METRICS_BY_KEY.get(v, v) for v in variaveis]
-        label = ", ".join(labels)
+        if combine_or:
+            label = "qualquer recurso de acessibilidade"
+        else:
+            labels = [METRICS_BY_KEY.get(v, v) for v in variaveis]
+            label = ", ".join(labels)
         titulo = f"Percentual de escolas com {label} por município — {recorte}"
         figure = self._build_tab_percent_figure(df, "percentual", titulo)
         return {
