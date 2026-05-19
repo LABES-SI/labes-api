@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from app.domain.acessibilidade import (
+    AcessibilidadeLocalizacao,
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
     #P1G4
@@ -99,6 +100,14 @@ class AcessibilidadeService:
             tp_localizacao=tp_localizacao,
         )
 
+        loc_records = await self._repository.find_media_por_localizacao(
+            metrica=variaveis[0],
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
+
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
@@ -107,6 +116,7 @@ class AcessibilidadeService:
         card_total_escolas = self._build_total_escolas_card(total_escolas_record)
         #P1G5
         grafico_dependencia = self._build_dependencia_chart(dep_records, variaveis[0])
+        grafico_tp_localizacao = self._build_localizacao_chart(loc_records, variaveis[0])
 
         return {
             "descricao": PAINEL_DESCRICAO,
@@ -117,6 +127,7 @@ class AcessibilidadeService:
                     "card_total_escolas": card_total_escolas,
                     #P1G5
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
+                    "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
                 },
                 "dados_filtros": {
                     "municipios": [
@@ -396,6 +407,57 @@ class AcessibilidadeService:
             xaxis_title="",
             showlegend=False,
             template="plotly_white"
+        )
+        return fig
+
+    def _build_localizacao_chart(
+        self,
+        records: list[AcessibilidadeLocalizacao],
+        metrica: str,
+    ) -> dict:
+        """Estrutura o envelope JSON do gráfico por tipo de localização."""
+        sorted_records = sorted(records, key=lambda x: x.percentual, reverse=True)
+
+        x_data = [r.localizacao for r in sorted_records]
+        y_data = [r.percentual for r in sorted_records]
+
+        titulo = (
+            "Percentual de Recursos de Acessibilidade nas Escolas do Pará "
+            "por Tipo de Localização"
+        )
+        figure = self._build_localizacao_figure(x_data, y_data, titulo)
+
+        return {
+            "tipo": "bar",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
+    @staticmethod
+    def _build_localizacao_figure(
+        x_data: list[str],
+        y_data: list[float],
+        titulo: str,
+    ) -> go.Figure:
+        """Gera o objeto gráfico do Plotly para barras verticais."""
+        import plotly.express as px
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=x_data,
+                y=y_data,
+                text=y_data,
+                texttemplate="%{text:.2f}%",
+                marker_color=px.colors.sequential.Blues_r,
+            )
+        )
+        fig.update_layout(
+            title=titulo,
+            yaxis_title="Percentual de Escolas",
+            xaxis_title="",
+            showlegend=False,
+            template="plotly_white",
         )
         return fig
 

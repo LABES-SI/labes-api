@@ -84,6 +84,22 @@ class AcessibilidadeDependencia:
     codigo_dependencia: int
     dependencia: str
     percentual: float
+
+
+@dataclass(frozen=True)
+class AcessibilidadeLocalizacao:
+    """
+    Percentual de escolas por tipo de localização (Urbana/Rural) com a métrica
+    de acessibilidade selecionada = 1, sobre o total de escolas daquela
+    localização no recorte filtrado.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
+    silver.dim_tp_localizacao.
+    """
+
+    codigo_localizacao: int
+    localizacao: str
+    percentual: float
 @dataclass(frozen=True)
 class AcessibilidadeTemporalDependencia:
     """
