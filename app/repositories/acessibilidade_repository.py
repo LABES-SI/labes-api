@@ -1,4 +1,4 @@
-from sqlalchemy import Numeric, case, func, literal, select
+from sqlalchemy import Numeric, and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.acessibilidade import (
@@ -114,6 +114,28 @@ def _row_to_temporal_dependencia(row) -> AcessibilidadeTemporalDependencia:
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
     )
 
+
+def _build_metric_predicate(variaveis: list[str], combine_or: bool):
+    """Resolve nomes de variáveis para colunas SQL e combina com AND/OR.
+
+    `combine_or=True` é usado pelo painel quando o filtro de variáveis chega
+    vazio (escola conta se tiver QUALQUER variável = 1). `combine_or=False`
+    mantém a semântica AND (escola precisa ter TODAS = 1). Levanta
+    ValueError em nome inválido.
+    """
+    cols = []
+    for nome in variaveis:
+        col = VARIAVEIS_ACESSIBILIDADE.get(nome)
+        if col is None:
+            raise ValueError(
+                f"Variável inválida: {nome!r}. "
+                f"Esperado uma de: {sorted(VARIAVEIS_ACESSIBILIDADE)}"
+            )
+        cols.append(col)
+    combinator = or_ if combine_or else and_
+    return combinator(*[c == 1 for c in cols])
+
+
 class AcessibilidadeRepository:
     """
     Acessa o domínio de acessibilidade no warehouse silver.
@@ -130,31 +152,29 @@ class AcessibilidadeRepository:
         self,
         *,
         variaveis: list[str] | None,
+        combine_or: bool = False,
         ano: int | None,
         municipios: list[str] | None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
     ) -> list[AcessibilidadeMunicipio]:
         """
-        Percentual de escolas por município que possuem o indicador
-        `metrica` = 1, sobre o total de escolas do município no recorte.
+        Percentual de escolas por município que possuem o(s) indicador(es)
+        de `variaveis` = 1, sobre o total de escolas do município no recorte.
 
-        - Numerador: COUNT(co_entidade) com `metrica` = 1 + filtros de população.
+        - `combine_or=False` (default): semântica AND — escola precisa ter
+          TODAS as variáveis = 1.
+        - `combine_or=True`: semântica OR — escola conta se tiver QUALQUER
+          variável = 1 (usado pelo painel quando o filtro chega vazio).
         - Denominador (subconsulta correlacionada): COUNT(co_entidade) do
           mesmo município/ano (+ rede_ensino/tp_localização se passados),
-          sem o filtro da métrica.
+          sem o filtro de métrica.
         - `municipios` filtra apenas a saída (cada município é independente
           via correlação `e_sub.co_municipio = e.co_municipio`).
         """
-        # `variaveis` is a list of indicator column names (AND semantics).
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
-        metric_cols = []
-        for nome in variaveis:
-            col = VARIAVEIS_ACESSIBILIDADE.get(nome)
-            if col is None:
-                raise ValueError(f"Variável inválida: {nome!r}. Esperado uma de: {sorted(VARIAVEIS_ACESSIBILIDADE)}")
-            metric_cols.append(col)
+        metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
         f = fato_acessibilidade.c
         e = dim_entidade.c
@@ -212,7 +232,7 @@ class AcessibilidadeRepository:
                 percentual.label("percentual"),
             )
             .select_from(join_tree)
-            .where(*[c == 1 for c in metric_cols], m.no_municipio.is_not(None))
+            .where(metric_predicate, m.no_municipio.is_not(None))
             .group_by(e.co_municipio, m.no_municipio)
             .order_by(m.no_municipio)
         )
@@ -483,32 +503,26 @@ class AcessibilidadeRepository:
     async def find_total_escolas(
         self,
         *,
-        metrica: str,
+        variaveis: list[str],
+        combine_or: bool = False,
         ano: int | None = None,
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
     ) -> TotalEscolas:
         """
-        Calcula a quantidade absoluta de escolas (COUNT) que possuem o indicador
-        de métrica selecionada igual a 1, aplicando os filtros dinâmicos do painel.
+        Calcula a quantidade absoluta de escolas (COUNT) que satisfazem o
+        predicado de `variaveis`, aplicando os filtros dinâmicos do painel.
 
-        Alimenta o card de KPI do painel geral (P1G4)
+        - `combine_or=False`: escola precisa ter TODAS as variáveis = 1 (AND).
+        - `combine_or=True`: escola conta se tiver QUALQUER variável = 1 (OR).
+
+        Alimenta o card de KPI do painel geral (P1G4).
         """
-        # Normaliza nomes curtos do front (ex: "rampas") para o padrão das colunas (ex: "in_acessibilidade_rampas")
-        # CORREÇÃO (P1G5): Ajustado de 'rampas' estático para '{metrica}' dinâmico 
-        # para evitar que os cards de KPI mostrassem apenas dados de rampas.
-        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
-        if metrica == "banheiro_pne":
-            nome_coluna = "in_banheiro_pne"
+        if not variaveis:
+            raise ValueError("É necessário passar ao menos uma variável para o painel")
+        metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        if nome_coluna not in METRIC_TO_FATO_COLUMN:
-            raise ValueError(
-                f"Métrica inválida: {metrica!r}. Esperando um de: "
-                f"{sorted(METRIC_TO_FATO_COLUMN.keys())}"
-            )
-        
-        col = METRIC_TO_FATO_COLUMN[nome_coluna]
         f = fato_acessibilidade.c
         e = dim_entidade.c
         m = dim_municipio.c
@@ -524,11 +538,10 @@ class AcessibilidadeRepository:
             .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
         )
 
-        # Montagem do SELECT COUNT(*) executando o filtro da métrica ativa (=1)
         stmt = (
             select(func.count(f.co_entidade).label("total_escolas"))
             .select_from(join_tree)
-            .where(col == 1)
+            .where(metric_predicate)
         )
 
         # Aplicação dos filtros opcionais e dinâmicos do painel
@@ -545,30 +558,76 @@ class AcessibilidadeRepository:
         row = result.first()
 
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
-    
+
+    async def find_total_escolas_geral(
+        self,
+        *,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> TotalEscolas:
+        """
+        Total absoluto de escolas no recorte (ano/município/rede/localização),
+        SEM aplicar predicado de variáveis de acessibilidade. Funciona como
+        denominador comparável ao card_total_escolas_com_acessibilidade.
+        """
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        stmt = (
+            select(func.count(f.co_entidade).label("total_escolas"))
+            .select_from(join_tree)
+        )
+
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+
+        result = await self._session.execute(stmt)
+        row = result.first()
+        return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
+
     #P1G5
     async def find_media_por_dependencia(
         self,
         *,
-        metrica: str,
+        variaveis: list[str],
+        combine_or: bool = False,
         ano: int | None = None,
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
     ) -> list[AcessibilidadeDependencia]:
         """
-        Calcula o percentual de escolas que possuem a métrica de acessibilidade
-        igual a 1, agrupado por tipo de dependência administrativa (P1G5).
-        """
-        # Normaliza nomes curtos do front para o padrão das colunas
-        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
-        if metrica == "banheiro_pne":
-            nome_coluna = "in_banheiro_pne"
+        Calcula o percentual de escolas que satisfazem o predicado de
+        `variaveis`, agrupado por tipo de dependência administrativa (P1G5).
 
-        if nome_coluna not in METRIC_TO_FATO_COLUMN:
-            raise ValueError(f"Métrica inválida: {metrica!r}")
-            
-        col = METRIC_TO_FATO_COLUMN[nome_coluna]
+        - `combine_or=False`: numerador conta escolas com TODAS as
+          variáveis = 1 (AND).
+        - `combine_or=True`: numerador conta escolas com QUALQUER
+          variável = 1 (OR).
+        """
+        if not variaveis:
+            raise ValueError("É necessário passar ao menos uma variável para o painel")
+        metric_predicate = _build_metric_predicate(variaveis, combine_or)
+
         f = fato_acessibilidade.c
         e = dim_entidade.c
         m = dim_municipio.c
@@ -578,7 +637,7 @@ class AcessibilidadeRepository:
         # Agregação condicional
         percentual = func.round(
             (
-                func.count(case((col == 1, 1)))
+                func.count(case((metric_predicate, 1)))
                 * 100.0
                 / func.nullif(func.count(f.co_entidade), 0)
             ).cast(Numeric),
@@ -620,25 +679,26 @@ class AcessibilidadeRepository:
     async def find_media_por_localizacao(
         self,
         *,
-        metrica: str,
+        variaveis: list[str],
+        combine_or: bool = False,
         ano: int | None = None,
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
     ) -> list[AcessibilidadeLocalizacao]:
         """
-        Calcula o percentual de escolas que possuem a métrica de acessibilidade
-        igual a 1, agrupado por tipo de localização (Urbana/Rural).
+        Calcula o percentual de escolas que satisfazem o predicado de
+        `variaveis`, agrupado por tipo de localização (Urbana/Rural).
+
+        - `combine_or=False`: numerador conta escolas com TODAS as
+          variáveis = 1 (AND).
+        - `combine_or=True`: numerador conta escolas com QUALQUER
+          variável = 1 (OR).
         """
-        # Normaliza nomes curtos do front para o padrão das colunas
-        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
-        if metrica == "banheiro_pne":
-            nome_coluna = "in_banheiro_pne"
+        if not variaveis:
+            raise ValueError("É necessário passar ao menos uma variável para o painel")
+        metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        if nome_coluna not in METRIC_TO_FATO_COLUMN:
-            raise ValueError(f"Métrica inválida: {metrica!r}")
-
-        col = METRIC_TO_FATO_COLUMN[nome_coluna]
         f = fato_acessibilidade.c
         e = dim_entidade.c
         m = dim_municipio.c
@@ -647,7 +707,7 @@ class AcessibilidadeRepository:
 
         percentual = func.round(
             (
-                func.count(case((col == 1, 1)))
+                func.count(case((metric_predicate, 1)))
                 * 100.0
                 / func.nullif(func.count(f.co_entidade), 0)
             ).cast(Numeric),

@@ -66,37 +66,49 @@ class AcessibilidadeService:
 
         - Sem `municipios`: o tab_percent cobre todos os municípios do recorte.
         - Sem `ano`: agrega em todos os censos.
-        - `variaveis` define o indicador cuja proporção será plotada (escolas
-          do município com `variaveis = 1` sobre o total).
+        - `variaveis`: define quais indicadores entram no recorte.
+          • Sem filtro (None/vazio): usa OR sobre TODAS as 17 variáveis —
+            escola conta se tiver QUALQUER variável = 1.
+          • Com filtro: usa AND — escola precisa ter TODAS as variáveis = 1.
         - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
           aos numerador e denominador).
         """
-        if not variaveis:
-            variaveis = [METRIC_FIELDS[0][0]]
-        for v in variaveis:
-            if v not in METRICS_BY_KEY:
-                raise ValueError(f"Variável inválida: {v!r}. Esperado uma de: {sorted(METRICS_BY_KEY)}")
+        combine_or = not variaveis
+        if combine_or:
+            variaveis = [chave for chave, _ in METRIC_FIELDS]
+        else:
+            for v in variaveis:
+                if v not in METRICS_BY_KEY:
+                    raise ValueError(f"Variável inválida: {v!r}. Esperado uma de: {sorted(METRICS_BY_KEY)}")
 
         records = await self._repository.find_media_por_municipio(
             variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
         )
 
-        # P1G4: Busca o total absoluto baseado na mesma métrica e filtros
-        total_escolas_record = await self._repository.find_total_escolas(
-            metrica=variaveis[0],
+        total_escolas_com_acessibilidade_record = await self._repository.find_total_escolas(
+            variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
         )
 
-        #P1G5: Busca dados agrupados por dependência administrativa
+        total_escolas_geral_record = await self._repository.find_total_escolas_geral(
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
+
         dep_records = await self._repository.find_media_por_dependencia(
-            metrica=variaveis[0],
+            variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -104,7 +116,8 @@ class AcessibilidadeService:
         )
 
         loc_records = await self._repository.find_media_por_localizacao(
-            metrica=variaveis[0],
+            variaveis=variaveis,
+            combine_or=combine_or,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -114,18 +127,30 @@ class AcessibilidadeService:
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
-        tab_percent = self._build_tab_percent(records, ano, variaveis)
-        #P1G4
-        card_total_escolas = self._build_total_escolas_card(total_escolas_record)
-        #P1G5
-        grafico_dependencia = self._build_dependencia_chart(dep_records, variaveis[0])
-        grafico_tp_localizacao = self._build_localizacao_chart(loc_records, variaveis[0])
+        tab_percent = self._build_tab_percent(records, ano, variaveis, combine_or)
+
+        card_total_escolas = self._build_total_escolas_card(
+            total_escolas_geral_record,
+            titulo="Total de Escolas",
+        )
+        card_total_escolas_com_acessibilidade = self._build_total_escolas_card(
+            total_escolas_com_acessibilidade_record,
+            titulo="Total de Escolas com Acessibilidade",
+        )
+
+        grafico_dependencia = self._build_dependencia_chart(
+            dep_records, variaveis, combine_or, ano,
+        )
+        grafico_tp_localizacao = self._build_localizacao_chart(
+            loc_records, variaveis, combine_or, ano,
+        )
 
         return {
             "descricao": PAINEL_DESCRICAO,
             "data": {
                 "graficos": {
                     "card_total_escolas": card_total_escolas,
+                    "card_total_escolas_com_acessibilidade": card_total_escolas_com_acessibilidade,
                     "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
@@ -186,7 +211,7 @@ class AcessibilidadeService:
         )
         grafico = self._build_evolucao_temporal(records, metrica)
 
-        #P1G6
+
         dep_records = await self._repository.find_evolucao_por_dependencia(
             metrica=metrica,
         )
@@ -199,7 +224,6 @@ class AcessibilidadeService:
             "data": {
                 "graficos": {
                     "evolucao_temporal_por_localizacao": grafico,
-                    #P1G6
                     "evolucao_temporal_por_dependencia": grafico_dependencia,
                 },
                 "dados_filtros": {
@@ -211,11 +235,24 @@ class AcessibilidadeService:
             },
         }
 
+    @staticmethod
+    def _filtro_variaveis_label(variaveis: list[str], combine_or: bool) -> str:
+        if combine_or:
+            return "qualquer recurso de acessibilidade"
+        if len(variaveis) == 1:
+            return METRICS_BY_KEY.get(variaveis[0], variaveis[0])
+        return "múltiplos recursos de acessibilidade selecionados"
+
+    @staticmethod
+    def _recorte_temporal_label(ano: int | None) -> str:
+        return f"Censo {ano}" if ano is not None else "Todos os censos"
+
     def _build_tab_percent(
         self,
         records: list[AcessibilidadeMunicipio],
         ano: int | None,
         variaveis: list[str],
+        combine_or: bool = False,
     ) -> dict:
         df = self._records_to_dataframe(records)
         if not df.empty:
@@ -224,9 +261,8 @@ class AcessibilidadeService:
                 ascending=[False, True],
                 kind="mergesort",
             ).reset_index(drop=True)
-        recorte = f"Censo {ano}" if ano is not None else "Todos os censos"
-        labels = [METRICS_BY_KEY.get(v, v) for v in variaveis]
-        label = ", ".join(labels)
+        label = self._filtro_variaveis_label(variaveis, combine_or)
+        recorte = self._recorte_temporal_label(ano)
         titulo = f"Percentual de escolas com {label} por município — {recorte}"
         figure = self._build_tab_percent_figure(df, "percentual", titulo)
         return {
@@ -338,45 +374,52 @@ class AcessibilidadeService:
         )
         return fig
     
-    def _build_total_escolas_card(self, total_record: TotalEscolas) -> dict:
+    def _build_total_escolas_card(
+        self,
+        total_record: TotalEscolas,
+        titulo: str = "Total de Escolas",
+    ) -> dict:
         """Envelopa a figura do indicador no formato esperado pelo contrato da API"""
-        titulo = "Total de Escolas"
-        figure = self._build_total_escolas_figure(total_record.total)
+        figure = self._build_total_escolas_figure(total_record.total, titulo)
 
         return{
             "tipo": "indicator",
             "titulo": titulo,
             "plotly": json.loads(figure.to_json()),
         }
-    
+
     @staticmethod
-    def _build_total_escolas_figure(total: int) -> go.Figure:
+    def _build_total_escolas_figure(total: int, titulo: str = "Total de Escolas") -> go.Figure:
         """Constrói o componente de KPI (Indicator) idêntico ao protótipo do notebook"""
         fig = go.Figure(
             go.Indicator(
                 mode="number",
                 value=total,
-                title={"text": "Total de Escolas"},
+                title={"text": titulo},
                 number={"font": {"size": 60}}
             )
         )
         return fig
     
-    #P1G5
     def _build_dependencia_chart(
         self,
         records: list[AcessibilidadeDependencia],
-        metrica: str,
+        variaveis: list[str],
+        combine_or: bool,
+        ano: int | None,
     ) -> dict:
         """Estrutura o envelope JSON do gráfico de dependência administrativa (P1G5)."""
-        # Ordenação decrescente pelo percentual
         sorted_records = sorted(records, key=lambda x: x.percentual, reverse=True)
-        
+
         x_data = [r.dependencia for r in sorted_records]
         y_data = [r.percentual for r in sorted_records]
-        
-        # Mantém o título
-        titulo = 'Percentual de Recursos de Acessibilidade nas Escolas do Pará por Tipo de Localização'
+
+        label = self._filtro_variaveis_label(variaveis, combine_or)
+        recorte = self._recorte_temporal_label(ano)
+        titulo = (
+            f"Percentual de escolas com {label} por tipo de dependência "
+            f"administrativa — {recorte}"
+        )
         figure = self._build_dependencia_figure(x_data, y_data, titulo)
         
         return {
@@ -416,7 +459,9 @@ class AcessibilidadeService:
     def _build_localizacao_chart(
         self,
         records: list[AcessibilidadeLocalizacao],
-        metrica: str,
+        variaveis: list[str],
+        combine_or: bool,
+        ano: int | None,
     ) -> dict:
         """Estrutura o envelope JSON do gráfico por tipo de localização."""
         sorted_records = sorted(records, key=lambda x: x.percentual, reverse=True)
@@ -424,9 +469,11 @@ class AcessibilidadeService:
         x_data = [r.localizacao for r in sorted_records]
         y_data = [r.percentual for r in sorted_records]
 
+        label = self._filtro_variaveis_label(variaveis, combine_or)
+        recorte = self._recorte_temporal_label(ano)
         titulo = (
-            "Percentual de Recursos de Acessibilidade nas Escolas do Pará "
-            "por Tipo de Localização"
+            f"Percentual de escolas com {label} por tipo de localização "
+            f"— {recorte}"
         )
         figure = self._build_localizacao_figure(x_data, y_data, titulo)
 
