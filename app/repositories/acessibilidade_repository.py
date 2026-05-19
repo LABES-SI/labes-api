@@ -558,7 +558,52 @@ class AcessibilidadeRepository:
         row = result.first()
 
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
-    
+
+    async def find_total_escolas_geral(
+        self,
+        *,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> TotalEscolas:
+        """
+        Total absoluto de escolas no recorte (ano/município/rede/localização),
+        SEM aplicar predicado de variáveis de acessibilidade. Funciona como
+        denominador comparável ao card_total_escolas_com_acessibilidade.
+        """
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        stmt = (
+            select(func.count(f.co_entidade).label("total_escolas"))
+            .select_from(join_tree)
+        )
+
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+
+        result = await self._session.execute(stmt)
+        row = result.first()
+        return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
+
     #P1G5
     async def find_media_por_dependencia(
         self,
