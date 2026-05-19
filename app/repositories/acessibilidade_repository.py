@@ -29,12 +29,23 @@ VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = {
 
 
 METRIC_TO_FATO_COLUMN = {
+    "in_banheiro_pne": fato_acessibilidade.c.in_banheiro_pne,
+    "in_sala_atendimento_especial": fato_acessibilidade.c.in_sala_atendimento_especial,
     "in_acessibilidade_rampas": fato_acessibilidade.c.in_acessibilidade_rampas,
     "in_acessibilidade_corrimao": fato_acessibilidade.c.in_acessibilidade_corrimao,
     "in_acessibilidade_elevador": fato_acessibilidade.c.in_acessibilidade_elevador,
     "in_acessibilidade_pisos_tateis": fato_acessibilidade.c.in_acessibilidade_pisos_tateis,
     "in_acessibilidade_vao_livre": fato_acessibilidade.c.in_acessibilidade_vao_livre,
-    "in_banheiro_pne": fato_acessibilidade.c.in_banheiro_pne,
+    "in_acessibilidade_inexistente": fato_acessibilidade.c.in_acessibilidade_inexistente,
+    "in_acessibilidade_sinal_tatil": fato_acessibilidade.c.in_acessibilidade_sinal_tatil,
+    "in_acessibilidade_sinal_sonoro": fato_acessibilidade.c.in_acessibilidade_sinal_sonoro,
+    "in_acessibilidade_sinal_visual": fato_acessibilidade.c.in_acessibilidade_sinal_visual,
+    "in_acessibilidade_sinalizacao": fato_acessibilidade.c.in_acessibilidade_sinalizacao,
+    "in_prof_psicologo": fato_acessibilidade.c.in_prof_psicologo,
+    "in_prof_trad_libras": fato_acessibilidade.c.in_prof_trad_libras,
+    "in_prof_revisor_braille": fato_acessibilidade.c.in_prof_revisor_braille,
+    "in_prof_assist_social": fato_acessibilidade.c.in_prof_assist_social,
+    "in_prof_fonaudiologo": fato_acessibilidade.c.in_prof_fonaudiologo,
 }
 
 
