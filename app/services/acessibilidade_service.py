@@ -129,13 +129,14 @@ class AcessibilidadeService:
 
         tab_percent = self._build_tab_percent(records, ano, variaveis, combine_or)
 
+        label_filtro = self._filtro_variaveis_label(variaveis, combine_or)
         card_total_escolas = self._build_total_escolas_card(
             total_escolas_geral_record,
             titulo="Total de Escolas",
         )
         card_total_escolas_com_acessibilidade = self._build_total_escolas_card(
             total_escolas_com_acessibilidade_record,
-            titulo="Total de Escolas com Acessibilidade",
+            titulo=f"Total de Escolas com {label_filtro}",
         )
 
         grafico_dependencia = self._build_dependencia_chart(
