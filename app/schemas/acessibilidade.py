@@ -34,6 +34,7 @@ class DadosFiltros(BaseModel):
     municipios: list[MunicipioFiltro]
     anos: list[int]
     metricas: list[MetricaFiltro]
+    rede_ensino: list[str]
 
 
 class PainelData(BaseModel):
