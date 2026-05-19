@@ -124,10 +124,8 @@ class AcessibilidadeService:
             "descricao": PAINEL_DESCRICAO,
             "data": {
                 "graficos": {
-                    "tab_percent_acessibilidade": tab_percent,
-                    #P1G4
                     "card_total_escolas": card_total_escolas,
-                    #P1G5
+                    "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
                 },
