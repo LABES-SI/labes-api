@@ -40,6 +40,7 @@ METRIC_FIELDS: list[tuple[str, str]] = [
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
 
 REDES_ENSINO: list[str] = ["Federal", "Estadual", "Municipal", "Privada"]
+TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
 
 PAINEL_DESCRICAO = "painel_acessibilidade"
 MAPA_DESCRICAO = "mapa_acessibilidade"
@@ -140,6 +141,7 @@ class AcessibilidadeService:
                         for chave, label in METRIC_FIELDS
                     ],
                     "rede_ensino": REDES_ENSINO,
+                    "tp_localizacao": TIPOS_LOCALIZACAO,
                 },
             },
         }
