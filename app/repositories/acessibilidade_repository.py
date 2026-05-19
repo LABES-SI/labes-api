@@ -2,9 +2,16 @@ from sqlalchemy import Numeric, case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.acessibilidade import (
+    AcessibilidadeLocalizacao,
     AcessibilidadeMapaPonto,
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
+    #P1G4
+    TotalEscolas,
+    #P1G5
+    AcessibilidadeDependencia,
+    #P1G6
+    AcessibilidadeTemporalDependencia,
 )
 from app.models.acessibilidade import (
     dim_entidade,
@@ -25,12 +32,23 @@ VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = {
 
 
 METRIC_TO_FATO_COLUMN = {
+    "in_banheiro_pne": fato_acessibilidade.c.in_banheiro_pne,
+    "in_sala_atendimento_especial": fato_acessibilidade.c.in_sala_atendimento_especial,
     "in_acessibilidade_rampas": fato_acessibilidade.c.in_acessibilidade_rampas,
     "in_acessibilidade_corrimao": fato_acessibilidade.c.in_acessibilidade_corrimao,
     "in_acessibilidade_elevador": fato_acessibilidade.c.in_acessibilidade_elevador,
     "in_acessibilidade_pisos_tateis": fato_acessibilidade.c.in_acessibilidade_pisos_tateis,
     "in_acessibilidade_vao_livre": fato_acessibilidade.c.in_acessibilidade_vao_livre,
-    "in_banheiro_pne": fato_acessibilidade.c.in_banheiro_pne,
+    "in_acessibilidade_inexistente": fato_acessibilidade.c.in_acessibilidade_inexistente,
+    "in_acessibilidade_sinal_tatil": fato_acessibilidade.c.in_acessibilidade_sinal_tatil,
+    "in_acessibilidade_sinal_sonoro": fato_acessibilidade.c.in_acessibilidade_sinal_sonoro,
+    "in_acessibilidade_sinal_visual": fato_acessibilidade.c.in_acessibilidade_sinal_visual,
+    "in_acessibilidade_sinalizacao": fato_acessibilidade.c.in_acessibilidade_sinalizacao,
+    "in_prof_psicologo": fato_acessibilidade.c.in_prof_psicologo,
+    "in_prof_trad_libras": fato_acessibilidade.c.in_prof_trad_libras,
+    "in_prof_revisor_braille": fato_acessibilidade.c.in_prof_revisor_braille,
+    "in_prof_assist_social": fato_acessibilidade.c.in_prof_assist_social,
+    "in_prof_fonaudiologo": fato_acessibilidade.c.in_prof_fonaudiologo,
 }
 
 
@@ -65,6 +83,36 @@ def _row_to_mapa_ponto(row) -> AcessibilidadeMapaPonto:
         classificacao_acessibilidade=row.classificacao_acessibilidade,
     )
 
+#P1G4
+def _row_to_total_escolas(row) -> TotalEscolas:
+    return TotalEscolas(
+        total=int(row.total_escolas) if row.total_escolas is not None else 0,
+    )
+
+#P1G5
+def _row_to_dependencia(row) -> AcessibilidadeDependencia:
+    return AcessibilidadeDependencia(
+        codigo_dependencia=int(row.codigo_dependencia),
+        dependencia=row.dependencia,
+        percentual=float(row.percentual) if row.percentual is not None else 0.0,
+    )
+
+
+def _row_to_localizacao(row) -> AcessibilidadeLocalizacao:
+    return AcessibilidadeLocalizacao(
+        codigo_localizacao=int(row.codigo_localizacao),
+        localizacao=row.localizacao,
+        percentual=float(row.percentual) if row.percentual is not None else 0.0,
+    )
+
+#P1G6
+def _row_to_temporal_dependencia(row) -> AcessibilidadeTemporalDependencia:
+    return AcessibilidadeTemporalDependencia(
+        ano=int(row.ano),
+        codigo_dependencia=int(row.codigo_dependencia),
+        dependencia=row.dependencia,
+        percentual=float(row.percentual) if row.percentual is not None else 0.0,
+    )
 
 class AcessibilidadeRepository:
     """
@@ -430,3 +478,270 @@ class AcessibilidadeRepository:
         )
         result = await self._session.execute(stmt)
         return [row[0] for row in result]
+
+    #P1G4
+    async def find_total_escolas(
+        self,
+        *,
+        metrica: str,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> TotalEscolas:
+        """
+        Calcula a quantidade absoluta de escolas (COUNT) que possuem o indicador
+        de métrica selecionada igual a 1, aplicando os filtros dinâmicos do painel.
+
+        Alimenta o card de KPI do painel geral (P1G4)
+        """
+        # Normaliza nomes curtos do front (ex: "rampas") para o padrão das colunas (ex: "in_acessibilidade_rampas")
+        # CORREÇÃO (P1G5): Ajustado de 'rampas' estático para '{metrica}' dinâmico 
+        # para evitar que os cards de KPI mostrassem apenas dados de rampas.
+        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
+        if metrica == "banheiro_pne":
+            nome_coluna = "in_banheiro_pne"
+
+        if nome_coluna not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperando um de: "
+                f"{sorted(METRIC_TO_FATO_COLUMN.keys())}"
+            )
+        
+        col = METRIC_TO_FATO_COLUMN[nome_coluna]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        # Árvore de JOINS idêntica ao padrão do restante do arquivo
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        # Montagem do SELECT COUNT(*) executando o filtro da métrica ativa (=1)
+        stmt = (
+            select(func.count(f.co_entidade).label("total_escolas"))
+            .select_from(join_tree)
+            .where(col == 1)
+        )
+
+        # Aplicação dos filtros opcionais e dinâmicos do painel
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+        
+        result = await self._session.execute(stmt)
+        row = result.first()
+
+        return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
+    
+    #P1G5
+    async def find_media_por_dependencia(
+        self,
+        *,
+        metrica: str,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> list[AcessibilidadeDependencia]:
+        """
+        Calcula o percentual de escolas que possuem a métrica de acessibilidade
+        igual a 1, agrupado por tipo de dependência administrativa (P1G5).
+        """
+        # Normaliza nomes curtos do front para o padrão das colunas
+        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
+        if metrica == "banheiro_pne":
+            nome_coluna = "in_banheiro_pne"
+
+        if nome_coluna not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(f"Métrica inválida: {metrica!r}")
+            
+        col = METRIC_TO_FATO_COLUMN[nome_coluna]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        # Agregação condicional
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        # Joins necessários para cruzar os dados com a dimensão de dependência
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .join(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        stmt = (
+            select(
+                d.co_tp_dependencia.label("codigo_dependencia"),
+                d.no_tp_dependencia.label("dependencia"),
+                percentual.label("percentual"),
+            )
+            .select_from(join_tree)
+            .group_by(d.co_tp_dependencia, d.no_tp_dependencia)
+        )
+
+        # Filtros dinâmicos herdados globalmente do painel
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+
+        result = await self._session.execute(stmt)
+        return [_row_to_dependencia(row) for row in result]
+
+    async def find_media_por_localizacao(
+        self,
+        *,
+        metrica: str,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> list[AcessibilidadeLocalizacao]:
+        """
+        Calcula o percentual de escolas que possuem a métrica de acessibilidade
+        igual a 1, agrupado por tipo de localização (Urbana/Rural).
+        """
+        # Normaliza nomes curtos do front para o padrão das colunas
+        nome_coluna = metrica if metrica.startswith("in_") else f"in_acessibilidade_{metrica}"
+        if metrica == "banheiro_pne":
+            nome_coluna = "in_banheiro_pne"
+
+        if nome_coluna not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(f"Métrica inválida: {metrica!r}")
+
+        col = METRIC_TO_FATO_COLUMN[nome_coluna]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .join(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+        )
+
+        stmt = (
+            select(
+                l.co_tp_localizacao.label("codigo_localizacao"),
+                l.no_tp_localizacao.label("localizacao"),
+                percentual.label("percentual"),
+            )
+            .select_from(join_tree)
+            .where(l.no_tp_localizacao.is_not(None))
+            .group_by(l.co_tp_localizacao, l.no_tp_localizacao)
+        )
+
+        if ano is not None:
+            stmt = stmt.where(f.nu_ano_censo == ano)
+        if municipios:
+            stmt = stmt.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+
+        result = await self._session.execute(stmt)
+        return [_row_to_localizacao(row) for row in result]
+
+    #P1G6
+    async def find_evolucao_por_dependencia(
+        self,
+        metrica: str,
+    ) -> list[AcessibilidadeTemporalDependencia]:
+        """Percentual da métrica por (ano censo, tipo de dependência
+        administrativa).
+
+        Equivale à query original com subquery correlacionada, reescrita
+        aqui via agregação condicional (COUNT(CASE WHEN...)) seguindo o
+        mesmo padrão de find_evolucao_por_localizacao — generalizada
+        para qualquer métrica do whitelist.
+        """
+        if metrica not in METRIC_TO_FATO_COLUMN:
+            raise ValueError(
+                f"Métrica inválida: {metrica!r}. Esperado uma de: "
+                f"{sorted(METRIC_TO_FATO_COLUMN)}"
+            )
+        col = METRIC_TO_FATO_COLUMN[metrica]
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        d = dim_tp_dependencia.c
+
+        percentual = func.round(
+            (
+                func.count(case((col == 1, 1)))
+                * 100.0
+                / func.nullif(func.count(f.co_entidade), 0)
+            ).cast(Numeric),
+            2,
+        )
+
+        join_tree = (
+            fato_acessibilidade
+            .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+        )
+
+        stmt = (
+            select(
+                f.nu_ano_censo.label("ano"),
+                d.co_tp_dependencia.label("codigo_dependencia"),
+                d.no_tp_dependencia.label("dependencia"),
+                percentual.label("percentual"),
+            )
+            .select_from(join_tree)
+            .where(
+                d.no_tp_dependencia.is_not(None),
+                f.nu_ano_censo.is_not(None),
+            )
+            .group_by(
+                f.nu_ano_censo,
+                d.co_tp_dependencia,
+                d.no_tp_dependencia,
+            )
+            .order_by(f.nu_ano_censo, d.no_tp_dependencia)
+        )
+
+        result = await self._session.execute(stmt)
+        return [_row_to_temporal_dependencia(row) for row in result]

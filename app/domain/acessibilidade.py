@@ -55,3 +55,64 @@ class AcessibilidadeMapaPonto:
     no_tp_localizacao: str | None
     score_acessibilidade: int
     classificacao_acessibilidade: str
+
+# P1G4
+@dataclass(frozen=True)
+class TotalEscolas:
+    """
+    Quantidade total de escolas que atendem aos filtros selecionados e possuem
+    o recurso de acessibilidade física ativo (=1). Alimenta o card KPI de 
+    destaque no topo do painel
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade.
+    Granularidade: Um único valor numérico interiro
+    """
+
+    total: int
+
+#P1G5
+@dataclass(frozen=True)
+class AcessibilidadeDependencia:
+    """
+    Percentual de escolas por tipo de dependência administrativa com a métrica 
+    de acessibilidade selecionada = 1, sobre o total de escolas daquela dependência 
+    no recorte filtrado.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade + silver.dim_tp_dependencia.
+    """
+
+    codigo_dependencia: int
+    dependencia: str
+    percentual: float
+
+
+@dataclass(frozen=True)
+class AcessibilidadeLocalizacao:
+    """
+    Percentual de escolas por tipo de localização (Urbana/Rural) com a métrica
+    de acessibilidade selecionada = 1, sobre o total de escolas daquela
+    localização no recorte filtrado.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
+    silver.dim_tp_localizacao.
+    """
+
+    codigo_localizacao: int
+    localizacao: str
+    percentual: float
+@dataclass(frozen=True)
+class AcessibilidadeTemporalDependencia:
+    """
+    Percentual de escolas com a métrica de acessibilidade selecionada,
+    por (ano censo, tipo de dependência administrativa). Alimenta o
+    gráfico de evolução temporal por dependência no endpoint
+    /analise-temporal.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
+    silver.dim_tp_dependencia.
+    """
+
+    ano: int
+    codigo_dependencia: int
+    dependencia: str
+    percentual: float
