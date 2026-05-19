@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.core.exceptions import AppError, app_error_handler
@@ -10,6 +11,16 @@ from app.routes.health import router as health_router
 configure_logging()
 
 app = FastAPI(title="labes-api", version="0.3.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_exception_handler(AppError, app_error_handler)
