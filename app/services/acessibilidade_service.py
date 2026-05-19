@@ -10,6 +10,8 @@ from app.domain.acessibilidade import (
     TotalEscolas,
     #P1G5
     AcessibilidadeDependencia,
+    #P1G6
+    AcessibilidadeTemporalDependencia,
 )
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
@@ -154,10 +156,11 @@ class AcessibilidadeService:
         }
 
     async def build_analise_temporal(self, metrica: str) -> dict:
-        """Monta o gráfico de evolução temporal por tipo de localização.
-
-        Uma linha por tipo de localização (urbana/rural), eixo X = ano censo,
-        eixo Y = percentual de escolas com a métrica selecionada.
+        """Monta os gráficos de evolução temporal: por tipo de localização
+        (urbana/rural) e por tipo de dependência administrativa
+        (Federal/Estadual/Municipal/Privada, P1G6). Ambos parametrizados
+        pela mesma `metrica`, com eixo X = ano censo e eixo Y = percentual
+        de escolas com a métrica = 1.
         """
         if metrica not in METRICS_BY_KEY:
             raise ValueError(
@@ -168,11 +171,22 @@ class AcessibilidadeService:
             metrica=metrica,
         )
         grafico = self._build_evolucao_temporal(records, metrica)
+
+        #P1G6
+        dep_records = await self._repository.find_evolucao_por_dependencia(
+            metrica=metrica,
+        )
+        grafico_dependencia = self._build_evolucao_temporal_dependencia(
+            dep_records, metrica
+        )
+
         return {
             "descricao": ANALISE_TEMPORAL_DESCRICAO,
             "data": {
                 "graficos": {
                     "evolucao_temporal_por_localizacao": grafico,
+                    #P1G6
+                    "evolucao_temporal_por_dependencia": grafico_dependencia,
                 },
                 "dados_filtros": {
                     "metricas": [
@@ -382,5 +396,66 @@ class AcessibilidadeService:
             xaxis_title="",
             showlegend=False,
             template="plotly_white"
+        )
+        return fig
+
+    #P1G6
+    @staticmethod
+    def _temporal_dependencia_to_dataframe(
+        records: list[AcessibilidadeTemporalDependencia],
+    ) -> pd.DataFrame:
+        rows = [
+            {
+                "ano": r.ano,
+                "dependencia": r.dependencia,
+                "percentual": r.percentual,
+            }
+            for r in records
+        ]
+        return pd.DataFrame(rows)
+
+    #P1G6
+    def _build_evolucao_temporal_dependencia(
+        self,
+        records: list[AcessibilidadeTemporalDependencia],
+        metrica: str,
+    ) -> dict:
+        label = METRICS_BY_KEY[metrica]
+        titulo = f"Evolução temporal de {label} por tipo de dependência"
+        df = self._temporal_dependencia_to_dataframe(records)
+        if not df.empty:
+            df = df.sort_values(
+                by=["dependencia", "ano"]
+            ).reset_index(drop=True)
+        figure = self._build_evolucao_temporal_dependencia_figure(df, titulo)
+        return {
+            "tipo": "line",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
+    #P1G6
+    @staticmethod
+    def _build_evolucao_temporal_dependencia_figure(
+        df: pd.DataFrame,
+        titulo: str,
+    ) -> go.Figure:
+        fig = go.Figure()
+        if not df.empty:
+            for dependencia in df["dependencia"].unique():
+                df_dep = df[df["dependencia"] == dependencia]
+                fig.add_trace(
+                    go.Scatter(
+                        x=df_dep["ano"].tolist(),
+                        y=df_dep["percentual"].tolist(),
+                        mode="lines+markers",
+                        name=dependencia,
+                    )
+                )
+        fig.update_layout(
+            title=titulo,
+            xaxis=dict(title="Ano", dtick=1),
+            yaxis=dict(title="Percentual de Acessibilidade", ticksuffix="%"),
+            template="plotly_white",
         )
         return fig

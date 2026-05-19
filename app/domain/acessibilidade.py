@@ -84,3 +84,19 @@ class AcessibilidadeDependencia:
     codigo_dependencia: int
     dependencia: str
     percentual: float
+@dataclass(frozen=True)
+class AcessibilidadeTemporalDependencia:
+    """
+    Percentual de escolas com a métrica de acessibilidade selecionada,
+    por (ano censo, tipo de dependência administrativa). Alimenta o
+    gráfico de evolução temporal por dependência no endpoint
+    /analise-temporal.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
+    silver.dim_tp_dependencia.
+    """
+
+    ano: int
+    codigo_dependencia: int
+    dependencia: str
+    percentual: float
