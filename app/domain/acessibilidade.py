@@ -35,6 +35,20 @@ class AcessibilidadeTemporal:
 
 
 @dataclass(frozen=True)
+class AcessibilidadeEvolucaoDependencia:
+    """
+    Percentual de escolas com a métrica de acessibilidade selecionada, por
+    (ano censo, tipo de dependência). Alimenta o gráfico de evolução temporal
+    por tipo de dependência (Federal, Estadual, etc).
+    """
+
+    ano: int
+    codigo_dependencia: int
+    dependencia: str
+    percentual: float
+
+
+@dataclass(frozen=True)
 class AcessibilidadeMapaPonto:
     """
     Ponto georreferenciado de uma escola com score e classificação de

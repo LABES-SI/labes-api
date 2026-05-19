@@ -10,6 +10,7 @@ from app.domain.acessibilidade import (
     TotalEscolas,
     #P1G5
     AcessibilidadeDependencia,
+    AcessibilidadeEvolucaoDependencia,
 )
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 
@@ -164,15 +165,22 @@ class AcessibilidadeService:
                 f"Métrica inválida: {metrica!r}. Esperado uma de: "
                 f"{sorted(METRICS_BY_KEY)}"
             )
-        records = await self._repository.find_evolucao_por_localizacao(
+        records_loc = await self._repository.find_evolucao_por_localizacao(
             metrica=metrica,
         )
-        grafico = self._build_evolucao_temporal(records, metrica)
+        grafico_loc = self._build_evolucao_temporal(records_loc, metrica)
+
+        records_dep = await self._repository.find_evolucao_por_dependencia(
+            metrica=metrica,
+        )
+        grafico_dep = self._build_evolucao_dependencia(records_dep, metrica)
+
         return {
             "descricao": ANALISE_TEMPORAL_DESCRICAO,
             "data": {
                 "graficos": {
-                    "evolucao_temporal_por_localizacao": grafico,
+                    "evolucao_temporal_por_localizacao": grafico_loc,
+                    "evolucao_temporal_por_dependencia": grafico_dep,
                 },
                 "dados_filtros": {
                     "metricas": [
@@ -382,5 +390,60 @@ class AcessibilidadeService:
             xaxis_title="",
             showlegend=False,
             template="plotly_white"
+        )
+        return fig
+
+    #P1G7
+    def _build_evolucao_dependencia(
+        self,
+        records: list[AcessibilidadeEvolucaoDependencia],
+        metrica: str,
+    ) -> dict:
+        label = METRICS_BY_KEY[metrica]
+        titulo = f"Evolução temporal de {label} por tipo de dependência"
+        df = self._dependencia_to_dataframe(records)
+        if not df.empty:
+            df = df.sort_values(by=["dependencia", "ano"]).reset_index(drop=True)
+        figure = self._build_evolucao_dependencia_figure(df, titulo)
+        return {
+            "tipo": "line",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
+    @staticmethod
+    def _dependencia_to_dataframe(records: list[AcessibilidadeEvolucaoDependencia]) -> pd.DataFrame:
+        rows = [
+            {
+                "ano": r.ano,
+                "dependencia": r.dependencia,
+                "percentual": r.percentual,
+            }
+            for r in records
+        ]
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def _build_evolucao_dependencia_figure(
+        df: pd.DataFrame,
+        titulo: str,
+    ) -> go.Figure:
+        fig = go.Figure()
+        if not df.empty:
+            for dependencia in df["dependencia"].unique():
+                df_dep = df[df["dependencia"] == dependencia]
+                fig.add_trace(
+                    go.Scatter(
+                        x=df_dep["ano"].tolist(),
+                        y=df_dep["percentual"].tolist(),
+                        mode="lines+markers",
+                        name=dependencia,
+                    )
+                )
+        fig.update_layout(
+            title=titulo,
+            xaxis=dict(title="Ano", dtick=1),
+            yaxis=dict(title="Percentual de Acessibilidade", ticksuffix="%"),
+            template="plotly_white",
         )
         return fig
