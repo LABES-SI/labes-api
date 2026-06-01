@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from app.domain.acessibilidade import (
+    AcessibilidadeEscola,
     AcessibilidadeLocalizacao,
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
@@ -25,7 +26,7 @@ METRIC_FIELDS: list[tuple[str, str]] = [
     ("in_acessibilidade_elevador", "Elevador"),
     ("in_acessibilidade_pisos_tateis", "Pisos Táteis"),
     ("in_acessibilidade_vao_livre", "Vão Livre"),
-    ("in_acessibilidade_inexistente", "Acessibilidade Inexistente"),
+    ("in_acessibilidade_inexistente", "Outros"),
     ("in_acessibilidade_sinal_tatil", "Sinalização Tátil"),
     ("in_acessibilidade_sinal_sonoro", "Sinalização Sonora"),
     ("in_acessibilidade_sinal_visual", "Sinalização Visual"),
@@ -38,6 +39,30 @@ METRIC_FIELDS: list[tuple[str, str]] = [
 ]
 
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
+
+# (chave, rótulo, cor, grupo) — define ordem, cores e agrupamento da legenda
+# (Infraestrutura × Profissionais) do gráfico de métricas por escola.
+# in_acessibilidade_inexistente entra como "Outros" (base, igual ao protótipo).
+METRIC_ESCOLA_FIELDS: list[tuple[str, str, str, str]] = [
+    ("in_sala_atendimento_especial", "Sala de atendimento especial", "#4C78A8", "Infraestrutura"),
+    ("in_banheiro_pne",               "Banheiro PNE",                 "#F58518", "Infraestrutura"),
+    ("in_acessibilidade_rampas",      "Rampas",                       "#54A24B", "Infraestrutura"),
+    ("in_acessibilidade_corrimao",    "Corrimão",                     "#E45756", "Infraestrutura"),
+    ("in_acessibilidade_elevador",    "Elevador",                     "#72B7B2", "Infraestrutura"),
+    ("in_acessibilidade_pisos_tateis","Pisos táteis",                 "#EECA3B", "Infraestrutura"),
+    ("in_acessibilidade_vao_livre",   "Vão livre",                    "#B279A2", "Infraestrutura"),
+    ("in_acessibilidade_sinal_visual","Sinal visual",                 "#FF9DA6", "Infraestrutura"),
+    ("in_acessibilidade_sinal_sonoro","Sinal sonoro",                 "#9D755D", "Infraestrutura"),
+    ("in_acessibilidade_sinal_tatil", "Sinal tátil",                  "#1F77B4", "Infraestrutura"),
+    ("in_acessibilidade_sinalizacao", "Sinalização",                  "#D67195", "Infraestrutura"),
+    ("in_acessibilidade_inexistente", "Outros",                       "#444444", "Infraestrutura"),
+    ("in_prof_psicologo",             "Psicólogo",                    "#5254A3", "Profissionais"),
+    ("in_prof_trad_libras",           "Tradutor de Libras",           "#637939", "Profissionais"),
+    ("in_prof_revisor_braille",       "Revisor de Braille",           "#8C6D31", "Profissionais"),
+    ("in_prof_assist_social",         "Assistente social",            "#843C39", "Profissionais"),
+    ("in_prof_fonaudiologo",          "Fonoaudiólogo",                "#7B4173", "Profissionais"),
+]
+COR_AUSENTE = "#E5E5E5"
 
 REDES_ENSINO: list[str] = ["Federal", "Estadual", "Municipal", "Privada"]
 TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
@@ -74,6 +99,16 @@ class AcessibilidadeService:
           aos numerador e denominador).
         """
         combine_or = not variaveis
+        # "Sem filtro" = nenhum recorte aplicado. O gráfico por escola usa esse
+        # estado para limitar ao top 10 (maior score); com qualquer filtro,
+        # traz todas as escolas que casam.
+        is_unfiltered = (
+            combine_or
+            and ano is None
+            and not municipios
+            and not rede_ensino
+            and not tp_localizacao
+        )
         if combine_or:
             variaveis = [chave for chave, _ in METRIC_FIELDS]
         else:
@@ -124,6 +159,16 @@ class AcessibilidadeService:
             tp_localizacao=tp_localizacao,
         )
 
+        escola_records = await self._repository.find_metricas_por_escola(
+            variaveis=variaveis,
+            combine_or=combine_or,
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+            limit=10 if is_unfiltered else None,
+        )
+
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
@@ -145,6 +190,9 @@ class AcessibilidadeService:
         grafico_tp_localizacao = self._build_localizacao_chart(
             loc_records, variaveis, combine_or, ano,
         )
+        grafico_metricas_por_escola = self._build_metricas_por_escola(
+            escola_records, ano, variaveis, combine_or, municipios,
+        )
 
         return {
             "descricao": PAINEL_DESCRICAO,
@@ -155,6 +203,7 @@ class AcessibilidadeService:
                     "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
+                    "grafico_metricas_por_escola_acessibilidade": grafico_metricas_por_escola,
                 },
                 "dados_filtros": {
                     "municipios": [
@@ -247,6 +296,32 @@ class AcessibilidadeService:
     @staticmethod
     def _recorte_temporal_label(ano: int | None) -> str:
         return f"Censo {ano}" if ano is not None else "Todos os censos"
+
+    @staticmethod
+    def _municipios_label(municipios: list[str]) -> str:
+        """Trecho de município (já com preposição) para o título. Nome do
+        município quando houver só um; texto genérico quando houver vários."""
+        if len(municipios) == 1:
+            return f"em {municipios[0]}"
+        return "nos municípios selecionados"
+
+    @staticmethod
+    def _recorte_escola_label(
+        ano: int | None,
+        records: list[AcessibilidadeEscola],
+    ) -> str:
+        """Rótulo temporal do gráfico por escola. Sem filtro de `ano`, cada
+        escola usa o seu censo mais recente — então o rótulo mostra o(s)
+        ano(s) realmente exibido(s) em vez de 'Todos os censos' (que
+        confundiria)."""
+        if ano is not None:
+            return f"Censo {ano}"
+        anos = sorted({r.nu_ano_censo for r in records})
+        if not anos:
+            return "Censo mais recente por escola"
+        if len(anos) == 1:
+            return f"Censo mais recente ({anos[0]})"
+        return f"Censo mais recente por escola ({anos[0]}–{anos[-1]})"
 
     def _build_tab_percent(
         self,
@@ -508,6 +583,112 @@ class AcessibilidadeService:
             yaxis_title="Percentual de Escolas",
             xaxis_title="",
             showlegend=False,
+            template="plotly_white",
+        )
+        return fig
+
+    def _build_metricas_por_escola(
+        self,
+        records: list[AcessibilidadeEscola],
+        ano: int | None,
+        variaveis: list[str],
+        combine_or: bool,
+        municipios: list[str] | None,
+    ) -> dict:
+        """Envelopa o gráfico de barras empilhadas de métricas por escola."""
+        label = self._filtro_variaveis_label(variaveis, combine_or)
+        recorte = self._recorte_escola_label(ano, records)
+        sufixo_municipio = (
+            f" {self._municipios_label(municipios)}" if municipios else ""
+        )
+        titulo = (
+            f"Métricas de acessibilidade por escola com {label}"
+            f"{sufixo_municipio} — {recorte}"
+        )
+        figure = self._build_metricas_por_escola_figure(records, titulo)
+        return {
+            "tipo": "bar",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
+    @staticmethod
+    def _build_metricas_por_escola_figure(
+        records: list[AcessibilidadeEscola],
+        titulo: str,
+    ) -> go.Figure:
+        """Uma barra horizontal empilhada por escola: cada métrica é um slot de
+        largura 1, colorido se a escola possui (=1) ou cinza se não. Legenda
+        manual agrupada (Infraestrutura × Profissionais) e anotação n/17 ao
+        final de cada barra. Os registros chegam ordenados por score DESC; o
+        eixo Y é invertido para o maior score ficar no topo."""
+        fig = go.Figure()
+        escolas = [r.no_entidade for r in records]
+        n = len(records)
+        n_metricas = len(METRIC_ESCOLA_FIELDS)
+
+        # Uma barra empilhada por métrica (slot fixo de largura 1).
+        for chave, rotulo, cor, _grupo in METRIC_ESCOLA_FIELDS:
+            possui = [r.metricas.get(chave, 0) == 1 for r in records]
+            fig.add_trace(
+                go.Bar(
+                    y=escolas,
+                    x=[1] * n,
+                    orientation="h",
+                    marker=dict(
+                        color=[cor if p else COR_AUSENTE for p in possui],
+                        line=dict(color="white", width=2),
+                    ),
+                    customdata=[
+                        [rotulo, "Possui" if p else "Não possui", r.nu_ano_censo]
+                        for r, p in zip(records, possui)
+                    ],
+                    hovertemplate=(
+                        "<b>%{y}</b> (censo %{customdata[2]})<br>"
+                        "%{customdata[0]}: %{customdata[1]}<extra></extra>"
+                    ),
+                    showlegend=False,
+                )
+            )
+
+        # Legenda manual agrupada, com swatch na cor de cada métrica.
+        grupos_vistos: set[str] = set()
+        for _chave, rotulo, cor, grupo in METRIC_ESCOLA_FIELDS:
+            fig.add_trace(
+                go.Scatter(
+                    x=[None],
+                    y=[None],
+                    mode="markers",
+                    marker=dict(symbol="square", size=12, color=cor),
+                    name=rotulo,
+                    legendgroup=grupo,
+                    legendgrouptitle_text=(
+                        grupo if grupo not in grupos_vistos else None
+                    ),
+                    showlegend=True,
+                )
+            )
+            grupos_vistos.add(grupo)
+
+        # Contagem n/17 ao final de cada barra.
+        for r in records:
+            fig.add_annotation(
+                x=n_metricas + 0.2,
+                y=r.no_entidade,
+                text=f"{int(r.score)}/{n_metricas}",
+                showarrow=False,
+                xanchor="left",
+                font=dict(size=11, color="#444"),
+            )
+
+        fig.update_layout(
+            barmode="stack",
+            title=titulo,
+            xaxis=dict(showticklabels=False, range=[0, n_metricas + 1.5]),
+            yaxis=dict(title="", autorange="reversed"),
+            height=max(400, 26 * max(n, 1)),
+            bargap=0.35,
+            legend_title_text="Métricas",
             template="plotly_white",
         )
         return fig
