@@ -15,6 +15,7 @@ class AcessibilidadeMunicipio:
     codigo_municipio: int
     municipio: str
     percentual: float
+    total_escolas: int
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ class AcessibilidadeDependencia:
     codigo_dependencia: int
     dependencia: str
     percentual: float
+    total_escolas: int
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,7 @@ class AcessibilidadeLocalizacao:
     codigo_localizacao: int
     localizacao: str
     percentual: float
+    total_escolas: int
 
 
 @dataclass(frozen=True)
