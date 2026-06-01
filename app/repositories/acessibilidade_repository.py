@@ -2,6 +2,7 @@ from sqlalchemy import Numeric, and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.acessibilidade import (
+    AcessibilidadeEscola,
     AcessibilidadeLocalizacao,
     AcessibilidadeMapaPonto,
     AcessibilidadeMunicipio,
@@ -103,6 +104,17 @@ def _row_to_localizacao(row) -> AcessibilidadeLocalizacao:
         codigo_localizacao=int(row.codigo_localizacao),
         localizacao=row.localizacao,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
+    )
+
+
+def _row_to_escola(row) -> AcessibilidadeEscola:
+    metricas = {chave: int(row[chave] or 0) for chave in METRIC_TO_FATO_COLUMN}
+    return AcessibilidadeEscola(
+        co_entidade=int(row["co_entidade"]),
+        no_entidade=row["no_entidade"],
+        nu_ano_censo=int(row["nu_ano_censo"]),
+        metricas=metricas,
+        score=int(row["score"] or 0),
     )
 
 #P1G6
@@ -744,6 +756,98 @@ class AcessibilidadeRepository:
 
         result = await self._session.execute(stmt)
         return [_row_to_localizacao(row) for row in result]
+
+    async def find_metricas_por_escola(
+        self,
+        *,
+        variaveis: list[str],
+        combine_or: bool = False,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+        limit: int | None = None,
+    ) -> list[AcessibilidadeEscola]:
+        """
+        Lista escolas com o valor (0/1) de cada uma das 17 métricas de
+        acessibilidade e o score (soma das 17), aplicando a mesma regra de
+        filtro dos demais gráficos do painel.
+
+        - `combine_or=False`: escola entra se tiver TODAS as variáveis = 1 (AND).
+        - `combine_or=True`: escola entra se tiver QUALQUER variável = 1 (OR;
+          usado quando o filtro de variáveis chega vazio).
+        - Sem `ano`: dedup para o censo mais recente de cada escola
+          (row_number por co_entidade, nu_ano_censo DESC).
+        - `limit`: usado pelo painel para trazer só o top N (maior score)
+          quando nenhum filtro é aplicado.
+        """
+        if not variaveis:
+            raise ValueError("É necessário passar ao menos uma variável para o painel")
+        metric_predicate = _build_metric_predicate(variaveis, combine_or)
+
+        f = fato_acessibilidade.c
+        e = dim_entidade.c
+        m = dim_municipio.c
+        d = dim_tp_dependencia.c
+        l = dim_tp_localizacao.c
+
+        metric_cols = [
+            func.coalesce(col, 0).label(chave)
+            for chave, col in METRIC_TO_FATO_COLUMN.items()
+        ]
+        score_expr = sum(
+            (func.coalesce(col, 0) for col in METRIC_TO_FATO_COLUMN.values()),
+            literal(0),
+        )
+        # Dedup para o censo mais recente de cada escola: sem filtro de ano,
+        # uma escola aparece em vários censos — fica apenas a linha rn == 1.
+        rn = (
+            func.row_number()
+            .over(partition_by=e.co_entidade, order_by=f.nu_ano_censo.desc())
+            .label("rn")
+        )
+
+        join_tree = (
+            fato_acessibilidade
+            .join(dim_entidade, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+        )
+
+        base = (
+            select(
+                e.co_entidade.label("co_entidade"),
+                e.no_entidade.label("no_entidade"),
+                f.nu_ano_censo.label("nu_ano_censo"),
+                *metric_cols,
+                score_expr.label("score"),
+                rn,
+            )
+            .select_from(join_tree)
+            .where(metric_predicate, e.no_entidade.is_not(None))
+        )
+
+        if ano is not None:
+            base = base.where(f.nu_ano_censo == ano)
+        if municipios:
+            base = base.where(m.no_municipio.in_(municipios))
+        if rede_ensino:
+            base = base.where(d.no_tp_dependencia.in_(rede_ensino))
+        if tp_localizacao:
+            base = base.where(l.no_tp_localizacao.in_(tp_localizacao))
+
+        sub = base.subquery()
+        stmt = (
+            select(sub)
+            .where(sub.c.rn == 1)
+            .order_by(sub.c.score.desc(), sub.c.no_entidade)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
+        result = await self._session.execute(stmt)
+        return [_row_to_escola(row) for row in result.mappings()]
 
     #P1G6
     async def find_evolucao_por_dependencia(
