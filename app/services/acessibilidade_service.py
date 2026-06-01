@@ -130,13 +130,14 @@ class AcessibilidadeService:
         tab_percent = self._build_tab_percent(records, ano, variaveis, combine_or)
 
         label_filtro = self._filtro_variaveis_label(variaveis, combine_or)
+        recorte = self._recorte_temporal_label(ano)
         card_total_escolas = self._build_total_escolas_card(
             total_escolas_geral_record,
-            titulo="Total de Escolas",
+            titulo=f"Total de Escolas — {recorte}",
         )
         card_total_escolas_com_acessibilidade = self._build_total_escolas_card(
             total_escolas_com_acessibilidade_record,
-            titulo=f"Total de Escolas com {label_filtro}",
+            titulo=f"Total de Escolas com {label_filtro} — {recorte}",
         )
 
         grafico_dependencia = self._build_dependencia_chart(
@@ -278,7 +279,7 @@ class AcessibilidadeService:
         metrica: str,
     ) -> dict:
         label = METRICS_BY_KEY[metrica]
-        titulo = f"Evolução temporal de {label} por tipo de localização"
+        titulo = f"Percentual de escolas com {label} por tipo de localização (evolução temporal)"
         df = self._temporal_to_dataframe(records)
         if not df.empty:
             df = df.sort_values(by=["localizacao", "ano"]).reset_index(drop=True)
@@ -534,7 +535,7 @@ class AcessibilidadeService:
         metrica: str,
     ) -> dict:
         label = METRICS_BY_KEY[metrica]
-        titulo = f"Evolução temporal de {label} por tipo de dependência"
+        titulo = f"Percentual de escolas com {label} por tipo de dependência administrativa (evolução temporal)"
         df = self._temporal_dependencia_to_dataframe(records)
         if not df.empty:
             df = df.sort_values(
