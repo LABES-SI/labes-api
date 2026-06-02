@@ -68,6 +68,7 @@ class MapaPonto(BaseModel):
     no_tp_localizacao: str | None
     score_acessibilidade: int = Field(..., ge=0, le=11)
     classificacao_acessibilidade: Literal["Boa", "Média", "Baixa", "Inexistente"]
+    ideb: float | None = None
 
 
 class MapaData(BaseModel):
@@ -99,3 +100,14 @@ class AnaliseTemporalResponse(BaseModel):
 
     descricao: str = Field(..., description="Identificador semântico do recurso.")
     data: AnaliseTemporalData
+
+class IdebData(BaseModel):
+    graficos: dict[str, Grafico] = Field(
+        ...,
+        description="Mapa de gráficos do IDEB, indexados por chave semântica.",
+    )
+
+class IdebResponse(BaseModel):
+    """Resposta do cruzamento de Acessibilidade x IDEB."""
+    descricao: str = Field(..., description="Identificador semântico do cruzamento IDEB.")
+    data: IdebData

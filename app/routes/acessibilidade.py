@@ -7,6 +7,7 @@ from app.schemas.acessibilidade import (
     AnaliseTemporalResponse,
     MapaResponse,
     PainelResponse,
+    IdebResponse,
 )
 from app.services.acessibilidade_service import AcessibilidadeService
 
@@ -150,3 +151,53 @@ async def get_analise_temporal_acessibilidade(
     do frontend."""
     envelope = await service.build_analise_temporal(metrica=metrica)
     return AnaliseTemporalResponse(**envelope)
+
+@router.get(
+    "/ideb",
+    response_model=IdebResponse,
+    summary="Cruzamento do Score de Acessibilidade vs Nota do IDEB",
+)
+async def get_cruzamento_ideb(
+    ano: int | None = Query(
+        None,
+        description="Ano do censo escolar. Se omitido, retorna todos os anos.",
+    ),
+    municipios: list[str] | None = Query(
+        None,
+        description="Filtra por nome de município (parâmetro repetido).",
+    ),
+    variaveis: list[VariavelAcessibilidade] | None = Query(
+        None,
+        description="Filtro AND das variáveis de acessibilidade.",
+    ),
+    rede_ensino: list[RedeEnsino] | None = Query(
+        None,
+        description="Rede(s) de ensino: Federal, Estadual, Municipal, Privada.",
+    ),
+    tp_localizacao: list[TpLocalizacao] | None = Query(
+        None,
+        description="Localização da escola: Urbana ou Rural.",
+    ),
+    service: AcessibilidadeService = Depends(get_acessibilidade_service),
+) -> IdebResponse:
+    """Retorna gráfico de dispersão (scatter plot) cruzando o score de 
+    acessibilidade com a nota estimada do IDEB (mockada para fins de homologação)."""
+    
+    grafico = await service.build_analise_ideb(
+        ano=ano,
+        municipios=municipios,
+        variaveis=variaveis,
+        rede_ensino=rede_ensino,
+        tp_localizacao=tp_localizacao,
+    )
+    
+    envelope = {
+        "descricao": "cruzamento_ideb",
+        "data": {
+            "graficos": {
+                "scatter_ideb": grafico
+            }
+        }
+    }
+    
+    return IdebResponse(**envelope)
