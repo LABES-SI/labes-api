@@ -77,3 +77,37 @@ dim_tp_localizacao = Table(
     Column("co_tp_localizacao", Integer),
     Column("no_tp_localizacao", String),
 )
+
+
+ideb_anos_iniciais_escolas = Table(
+    "ideb_anos_iniciais_escolas",
+    metadata,
+    Column("CO_ENTIDADE", Integer),
+    Column("IDEB(2005)", Numeric),
+    Column("IDEB(2007)", Numeric),
+    Column("IDEB(2009)", Numeric),
+    Column("IDEB(2011)", Numeric),
+    Column("IDEB(2013)", Numeric),
+    Column("IDEB(2015)", Numeric),
+    Column("IDEB(2017)", Numeric),
+    Column("IDEB(2019)", Numeric),
+    Column("IDEB(2021)", Numeric),
+    Column("IDEB(2023)", Numeric),
+)
+
+
+ideb_anos_finais_escolas = Table(
+    "ideb_anos_finais_escolas",
+    metadata,
+    Column("CO_ENTIDADE", Integer),
+    Column("IDEB(2005)", Numeric),
+    Column("IDEB(2007)", Numeric),
+    Column("IDEB(2009)", Numeric),
+    Column("IDEB(2011)", Numeric),
+    Column("IDEB(2013)", Numeric),
+    Column("IDEB(2015)", Numeric),
+    Column("IDEB(2017)", Numeric),
+    Column("IDEB(2019)", Numeric),
+    Column("IDEB(2021)", Numeric),
+    Column("IDEB(2023)", Numeric),
+)
