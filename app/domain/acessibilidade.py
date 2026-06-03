@@ -15,6 +15,7 @@ class AcessibilidadeMunicipio:
     codigo_municipio: int
     municipio: str
     percentual: float
+    total_escolas: int
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ class AcessibilidadeDependencia:
     codigo_dependencia: int
     dependencia: str
     percentual: float
+    total_escolas: int
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,28 @@ class AcessibilidadeLocalizacao:
     codigo_localizacao: int
     localizacao: str
     percentual: float
+    total_escolas: int
+
+
+@dataclass(frozen=True)
+class AcessibilidadeEscola:
+    """
+    Uma escola com o valor (0/1) de cada uma das 17 métricas de
+    acessibilidade e o score (soma das 17). Quando o filtro de `ano` não é
+    informado, representa o censo mais recente disponível para a escola.
+
+    Fonte: silver.fato_acessibilidade + silver.dim_entidade. Alimenta o
+    gráfico de barras empilhadas "Métricas de acessibilidade por escola"
+    do painel.
+    """
+
+    co_entidade: int
+    no_entidade: str
+    nu_ano_censo: int
+    metricas: dict[str, int]
+    score: int
+
+
 @dataclass(frozen=True)
 class AcessibilidadeTemporalDependencia:
     """
