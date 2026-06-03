@@ -645,7 +645,7 @@ class AcessibilidadeService:
                         line=dict(color="white", width=2),
                     ),
                     customdata=[
-                        [rotulo, "Possui" if p else "Não possui", r.nu_ano_censo, self._mock_ideb_score(r.co_entidade, r.score)]
+                        [rotulo, "Possui" if p else "Não possui", r.nu_ano_censo, AcessibilidadeService._mock_ideb_score(r.co_entidade, r.score)]
                         for r, p in zip(records, possui)
                     ],
                     hovertemplate=(
