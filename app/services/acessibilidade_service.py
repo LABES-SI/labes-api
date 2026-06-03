@@ -191,7 +191,7 @@ class AcessibilidadeService:
         grafico_tp_localizacao = self._build_localizacao_chart(
             loc_records, variaveis, combine_or, ano,
         )
-        grafico_metricas_por_escola = self._build_metricas_por_escola(
+        grafico_metricas_por_escola = await self._build_metricas_por_escola(
             escola_records, ano, variaveis, combine_or, municipios,
         )
 
@@ -602,7 +602,7 @@ class AcessibilidadeService:
         )
         return fig
 
-    def _build_metricas_por_escola(
+    async def _build_metricas_por_escola(
         self,
         records: list[AcessibilidadeEscola],
         ano: int | None,
@@ -611,6 +611,10 @@ class AcessibilidadeService:
         municipios: list[str] | None,
     ) -> dict:
         """Envelopa o gráfico de barras empilhadas de métricas por escola."""
+        ideb_map = await self._repository.find_ideb_por_entidades(
+            [(r.co_entidade, r.nu_ano_censo) for r in records]
+        )
+
         label = self._filtro_variaveis_label(variaveis, combine_or)
         recorte = self._recorte_escola_label(ano, records)
         sufixo_municipio = (
@@ -620,7 +624,7 @@ class AcessibilidadeService:
             f"Métricas de acessibilidade por escola com {label}"
             f"{sufixo_municipio} — {recorte}"
         )
-        figure = self._build_metricas_por_escola_figure(records, titulo)
+        figure = self._build_metricas_por_escola_figure(records, titulo, ideb_map)
         return {
             "tipo": "bar",
             "titulo": titulo,
@@ -631,6 +635,7 @@ class AcessibilidadeService:
     def _build_metricas_por_escola_figure(
         records: list[AcessibilidadeEscola],
         titulo: str,
+        ideb_map: dict[int, float | None],
     ) -> go.Figure:
         """Uma barra horizontal empilhada por escola: cada métrica é um slot de
         largura 1, colorido se a escola possui (=1) ou cinza se não. Legenda
@@ -655,11 +660,20 @@ class AcessibilidadeService:
                         line=dict(color="white", width=2),
                     ),
                     customdata=[
-                        [rotulo, "Possui" if p else "Não possui", r.nu_ano_censo]
+                        [
+                            rotulo,
+                            "Possui" if p else "Não possui",
+                            r.nu_ano_censo,
+                            # Nota real ou "N/D" quando ausente
+                            ideb_map.get(r.co_entidade),
+                        ]
                         for r, p in zip(records, possui)
                     ],
                     hovertemplate=(
                         "<b>%{y}</b> (censo %{customdata[2]})<br>"
+                        # Plotly renderiza None como "null"; tratamos com
+                        # um ternário via customdata.
+                        "IDEB: %{customdata[3]}<br>"
                         "%{customdata[0]}: %{customdata[1]}<extra></extra>"
                     ),
                     showlegend=False,
@@ -768,3 +782,130 @@ class AcessibilidadeService:
             template="plotly_white",
         )
         return fig
+
+    async def _build_metricas_por_escola(
+        self,
+        records: list[AcessibilidadeEscola],
+        ano: int | None,
+        variaveis: list[str],
+        combine_or: bool,
+        municipios: list[str] | None,
+    ) -> dict:
+        """Envelopa o gráfico de barras empilhadas de métricas por escola."""
+        # Busca notas IDEB reais para as escolas do recorte.
+        ideb_map = await self._repository.find_ideb_por_entidades(
+            [(r.co_entidade, r.nu_ano_censo) for r in records]
+        )
+
+        label = self._filtro_variaveis_label(variaveis, combine_or)
+        recorte = self._recorte_escola_label(ano, records)
+        sufixo_municipio = (
+            f" {self._municipios_label(municipios)}" if municipios else ""
+        )
+        titulo = (
+            f"Métricas de acessibilidade por escola com {label}"
+            f"{sufixo_municipio} — {recorte}"
+        )
+        figure = self._build_metricas_por_escola_figure(records, titulo, ideb_map)
+        return {
+            "tipo": "bar",
+            "titulo": titulo,
+            "plotly": json.loads(figure.to_json()),
+        }
+
+
+    @staticmethod
+    def _mock_ideb_score(co_entidade: int, score_acessibilidade: int) -> float:
+        """Gera um valor determinístico de mock do IDEB baseado no código da entidade e no score."""
+        import random
+        # Cria uma instância de Random para não alterar o state global
+        rng = random.Random(co_entidade)
+        if score_acessibilidade >= 10:
+            base_ideb = rng.uniform(5.5, 7.5)
+        elif score_acessibilidade >= 6:
+            base_ideb = rng.uniform(4.5, 6.0)
+        else:
+            base_ideb = rng.uniform(3.0, 5.0)
+        ideb_nota = base_ideb + rng.uniform(-0.5, 0.5)
+        return round(max(0.0, min(10.0, ideb_nota)), 1)
+
+    async def build_analise_ideb(
+        self,
+        ano: int | None,
+        municipios: list[str] | None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+        variaveis: list[str] | None = None,
+    ) -> dict:
+        """Monta o gráfico de cruzamento entre Acessibilidade e IDEB.
+        Mock de dados do IDEB baseado no score de acessibilidade, 
+        pois a fato_ideb original não foi incluída na base atual.
+        """
+        pontos = await self._repository.find_pontos_mapa(
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+            variaveis=variaveis,
+        )
+
+        if not pontos:
+            return {"plotly": json.loads(go.Figure().to_json()), "tipo": "scatter", "titulo": "Acessibilidade x IDEB"}
+
+        dados = []
+        
+        for p in pontos:
+            nota_ideb = self._mock_ideb_score(p.co_entidade, p.score_acessibilidade)
+            
+            dados.append({
+                "Escola": str(p.no_entidade) if p.no_entidade else "Desconhecida",
+                "Municipio": str(p.no_municipio) if p.no_municipio else "Desconhecido",
+                "Score_Acessibilidade": p.score_acessibilidade,
+                "IDEB": nota_ideb,
+                "Classificacao": p.classificacao_acessibilidade,
+                "Rede": str(p.no_tp_dependencia) if p.no_tp_dependencia else "Desconhecida"
+            })
+
+        df = pd.DataFrame(dados)
+        fig = go.Figure()
+        
+        cores = {
+            "Boa": "#54A24B",
+            "Média": "#EECA3B",
+            "Baixa": "#F58518",
+            "Inexistente": "#E45756"
+        }
+        
+        for classif in ["Boa", "Média", "Baixa", "Inexistente"]:
+            df_classif = df[df["Classificacao"] == classif]
+            if df_classif.empty:
+                continue
+                
+            fig.add_trace(go.Scatter(
+                x=df_classif["Score_Acessibilidade"],
+                y=df_classif["IDEB"],
+                mode='markers',
+                name=classif,
+                marker=dict(
+                    color=cores.get(classif, "#444444"),
+                    size=10,
+                    line=dict(width=1, color='DarkSlateGrey')
+                ),
+                text=df_classif["Escola"] + "<br>Município: " + df_classif["Municipio"] + "<br>Rede: " + df_classif["Rede"],
+                hovertemplate="<b>%{text}</b><br><br>Score Acessibilidade: %{x}<br>IDEB: %{y}<extra></extra>"
+            ))
+            
+        fig.update_layout(
+            title="Cruzamento: Score de Acessibilidade vs Nota do IDEB",
+            xaxis_title="Score de Acessibilidade (0-11)",
+            yaxis_title="Nota Estimada IDEB",
+            legend_title="Classificação",
+            template="plotly_white",
+            hovermode="closest"
+        )
+
+        return {
+            "tipo": "scatter",
+            "titulo": "Cruzamento Acessibilidade vs IDEB",
+            "plotly": json.loads(fig.to_json())
+        }

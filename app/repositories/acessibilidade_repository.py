@@ -19,6 +19,8 @@ from app.models.acessibilidade import (
     dim_municipio,
     dim_tp_dependencia,
     dim_tp_localizacao,
+    ideb_anos_finais_escolas,
+    ideb_anos_iniciais_escolas,
     fato_acessibilidade,
 )
 
@@ -53,6 +55,20 @@ METRIC_TO_FATO_COLUMN = {
 }
 
 
+IDEB_YEAR_COLUMNS = {
+    2005: "ideb_2005",
+    2007: "ideb_2007",
+    2009: "ideb_2009",
+    2011: "ideb_2011",
+    2013: "ideb_2013",
+    2015: "ideb_2015",
+    2017: "ideb_2017",
+    2019: "ideb_2019",
+    2021: "ideb_2021",
+    2023: "ideb_2023",
+}
+
+
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
     return AcessibilidadeMunicipio(
         codigo_municipio=int(row.codigo_municipio),
@@ -83,6 +99,7 @@ def _row_to_mapa_ponto(row) -> AcessibilidadeMapaPonto:
         no_tp_localizacao=row.no_tp_localizacao,
         score_acessibilidade=int(row.score_acessibilidade),
         classificacao_acessibilidade=row.classificacao_acessibilidade,
+        ideb=float(row.ideb) if row.ideb is not None else None,
     )
 
 #P1G4
@@ -149,6 +166,25 @@ def _build_metric_predicate(variaveis: list[str], combine_or: bool):
         cols.append(col)
     combinator = or_ if combine_or else and_
     return combinator(*[c == 1 for c in cols])
+
+
+def _build_ideb_expr(ano_expr):
+    ideb_iniciais = ideb_anos_iniciais_escolas.c
+    ideb_finais = ideb_anos_finais_escolas.c
+
+    return case(
+        *[
+            (
+                ano_expr == ano,
+                func.coalesce(
+                    getattr(ideb_iniciais, column_name),
+                    getattr(ideb_finais, column_name),
+                ),
+            )
+            for ano, column_name in IDEB_YEAR_COLUMNS.items()
+        ],
+        else_=literal(None),
+    )
 
 
 class AcessibilidadeRepository:
@@ -915,3 +951,60 @@ class AcessibilidadeRepository:
 
         result = await self._session.execute(stmt)
         return [_row_to_temporal_dependencia(row) for row in result]
+
+
+    async def find_ideb_por_entidades(
+        self,
+        entidades: list[tuple[int, int]],  # [(co_entidade, nu_ano_censo), ...]
+    ) -> dict[int, float | None]:
+        """
+        Busca a nota IDEB de cada escola (co_entidade) no ano de censo
+        correspondente. Verifica primeiro ideb_anos_iniciais_escolas e depois
+        ideb_anos_finais_escolas. Retorna {co_entidade: nota | None}.
+        """
+        if not entidades:
+            return {}
+
+        # Ano IDEB mais próximo disponível (≤ ano censo, dentro do range).
+        ANOS_IDEB = [2005, 2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023]
+
+        def ano_ideb_mais_proximo(ano_censo: int) -> int | None:
+            candidatos = [a for a in ANOS_IDEB if a <= ano_censo]
+            return max(candidatos) if candidatos else None
+
+        # Agrupa entidades por ano-IDEB para minimizar consultas.
+        from collections import defaultdict
+        por_ano: dict[int, list[int]] = defaultdict(list)
+        ano_ideb_por_entidade: dict[int, int | None] = {}
+
+        for co_entidade, nu_ano_censo in entidades:
+            ano_ideb = ano_ideb_mais_proximo(nu_ano_censo)
+            ano_ideb_por_entidade[co_entidade] = ano_ideb
+            if ano_ideb is not None:
+                por_ano[ano_ideb].append(co_entidade)
+
+        resultado: dict[int, float | None] = {co: None for co, _ in entidades}
+
+        session = self._session
+        for ano_ideb, co_list in por_ano.items():
+            for ano_ideb, co_list in por_ano.items():
+                col_name = f"IDEB({ano_ideb})"
+
+                for table in (ideb_anos_iniciais_escolas, ideb_anos_finais_escolas):
+                    if col_name not in table.c:
+                        continue
+                    col = table.c[col_name]
+                    stmt = (
+                        select(table.c["CO_ENTIDADE"], col)
+                        .where(
+                            table.c["CO_ENTIDADE"].in_(co_list),
+                            col.is_not(None),
+                        )
+                    )
+                    rows = (await session.execute(stmt)).fetchall()
+                    for co_entidade, nota in rows:
+                        # Inicial tem precedência; só sobrescreve None.
+                        if resultado.get(co_entidade) is None:
+                            resultado[co_entidade] = float(nota)
+
+        return resultado
