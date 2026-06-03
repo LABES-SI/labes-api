@@ -58,6 +58,7 @@ def _row_to_municipio(row) -> AcessibilidadeMunicipio:
         codigo_municipio=int(row.codigo_municipio),
         municipio=row.municipio,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
+        total_escolas=int(row.total_escolas) if row.total_escolas is not None else 0,
     )
 
 
@@ -96,6 +97,7 @@ def _row_to_dependencia(row) -> AcessibilidadeDependencia:
         codigo_dependencia=int(row.codigo_dependencia),
         dependencia=row.dependencia,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
+        total_escolas=int(row.total_escolas) if row.total_escolas is not None else 0,
     )
 
 
@@ -104,6 +106,7 @@ def _row_to_localizacao(row) -> AcessibilidadeLocalizacao:
         codigo_localizacao=int(row.codigo_localizacao),
         localizacao=row.localizacao,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
+        total_escolas=int(row.total_escolas) if row.total_escolas is not None else 0,
     )
 
 
@@ -242,6 +245,7 @@ class AcessibilidadeRepository:
                 e.co_municipio.label("codigo_municipio"),
                 m.no_municipio.label("municipio"),
                 percentual.label("percentual"),
+                denominador.label("total_escolas"),
             )
             .select_from(join_tree)
             .where(metric_predicate, m.no_municipio.is_not(None))
@@ -670,6 +674,7 @@ class AcessibilidadeRepository:
                 d.co_tp_dependencia.label("codigo_dependencia"),
                 d.no_tp_dependencia.label("dependencia"),
                 percentual.label("percentual"),
+                func.count(f.co_entidade).label("total_escolas"),
             )
             .select_from(join_tree)
             .group_by(d.co_tp_dependencia, d.no_tp_dependencia)
@@ -739,6 +744,7 @@ class AcessibilidadeRepository:
                 l.co_tp_localizacao.label("codigo_localizacao"),
                 l.no_tp_localizacao.label("localizacao"),
                 percentual.label("percentual"),
+                func.count(f.co_entidade).label("total_escolas"),
             )
             .select_from(join_tree)
             .where(l.no_tp_localizacao.is_not(None))

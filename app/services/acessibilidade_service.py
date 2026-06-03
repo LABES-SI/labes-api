@@ -371,6 +371,7 @@ class AcessibilidadeService:
             {
                 "municipio": r.municipio,
                 "percentual": r.percentual,
+                "total_escolas": r.total_escolas,
             }
             for r in records
         ]
@@ -399,12 +400,15 @@ class AcessibilidadeService:
             values = df[metrica].tolist()
             municipios = df["municipio"].tolist()
             text_labels = [f"{v:.1f}%".replace(".", ",") for v in values]
+            totais = df["total_escolas"].tolist()
             fig.add_trace(
                 go.Bar(
                     x=values,
                     y=municipios,
                     orientation="h",
                     text=text_labels,
+                    customdata=totais,
+                    texttemplate="%{text}<br>%{customdata} escolas",
                     textposition="inside",
                     insidetextanchor="end",
                 )
@@ -491,13 +495,15 @@ class AcessibilidadeService:
         x_data = [r.dependencia for r in sorted_records]
         y_data = [r.percentual for r in sorted_records]
 
+        totais_escolas = [r.total_escolas for r in sorted_records]
+
         label = self._filtro_variaveis_label(variaveis, combine_or)
         recorte = self._recorte_temporal_label(ano)
         titulo = (
             f"Percentual de escolas com {label} por tipo de dependência "
             f"administrativa — {recorte}"
         )
-        figure = self._build_dependencia_figure(x_data, y_data, titulo)
+        figure = self._build_dependencia_figure(x_data, y_data, totais_escolas, titulo)
         
         return {
             "tipo": "bar",
@@ -509,6 +515,7 @@ class AcessibilidadeService:
     def _build_dependencia_figure(
         x_data: list[str],
         y_data: list[float],
+        totais_escolas: list[int],
         titulo: str,
     ) -> go.Figure:
         """Gera o objeto gráfico do Plotly para barras verticais."""
@@ -520,7 +527,9 @@ class AcessibilidadeService:
                 x=x_data,
                 y=y_data,
                 text=y_data,
-                texttemplate="%{text:.2f}%",
+                customdata=totais_escolas,
+                texttemplate="%{text:.2f}%<br>%{customdata} escolas",
+                textposition="auto",
                 marker_color=px.colors.sequential.Blues_r  # Paleta Blues_r
             )
         )
@@ -546,13 +555,15 @@ class AcessibilidadeService:
         x_data = [r.localizacao for r in sorted_records]
         y_data = [r.percentual for r in sorted_records]
 
+        totais_escolas = [r.total_escolas for r in sorted_records]
+
         label = self._filtro_variaveis_label(variaveis, combine_or)
         recorte = self._recorte_temporal_label(ano)
         titulo = (
             f"Percentual de escolas com {label} por tipo de localização "
             f"— {recorte}"
         )
-        figure = self._build_localizacao_figure(x_data, y_data, titulo)
+        figure = self._build_localizacao_figure(x_data, y_data, totais_escolas, titulo)
 
         return {
             "tipo": "bar",
@@ -564,6 +575,7 @@ class AcessibilidadeService:
     def _build_localizacao_figure(
         x_data: list[str],
         y_data: list[float],
+        totais_escolas: list[int],
         titulo: str,
     ) -> go.Figure:
         """Gera o objeto gráfico do Plotly para barras verticais."""
@@ -575,7 +587,9 @@ class AcessibilidadeService:
                 x=x_data,
                 y=y_data,
                 text=y_data,
-                texttemplate="%{text:.2f}%",
+                customdata=totais_escolas,
+                texttemplate="%{text:.2f}%<br>%{customdata} escolas",
+                textposition="auto",
                 marker_color=px.colors.sequential.Blues_r,
             )
         )
