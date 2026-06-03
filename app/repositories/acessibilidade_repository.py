@@ -955,56 +955,56 @@ class AcessibilidadeRepository:
 
     async def find_ideb_por_entidades(
         self,
-        entidades: list[tuple[int, int]],  # [(co_entidade, nu_ano_censo), ...]
-    ) -> dict[int, float | None]:
+        entidades: list[tuple[int, int]],
+    ) -> dict[int, dict[str, float | None]]:
         """
-        Busca a nota IDEB de cada escola (co_entidade) no ano de censo
-        correspondente. Verifica primeiro ideb_anos_iniciais_escolas e depois
-        ideb_anos_finais_escolas. Retorna {co_entidade: nota | None}.
+        Retorna {co_entidade: {"iniciais": float|None, "finais": float|None}}
+        para cada escola, buscando a nota IDEB do ano mais próximo disponível.
         """
         if not entidades:
             return {}
 
-        # Ano IDEB mais próximo disponível (≤ ano censo, dentro do range).
         ANOS_IDEB = [2005, 2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023]
 
         def ano_ideb_mais_proximo(ano_censo: int) -> int | None:
             candidatos = [a for a in ANOS_IDEB if a <= ano_censo]
             return max(candidatos) if candidatos else None
 
-        # Agrupa entidades por ano-IDEB para minimizar consultas.
         from collections import defaultdict
         por_ano: dict[int, list[int]] = defaultdict(list)
-        ano_ideb_por_entidade: dict[int, int | None] = {}
 
         for co_entidade, nu_ano_censo in entidades:
             ano_ideb = ano_ideb_mais_proximo(nu_ano_censo)
-            ano_ideb_por_entidade[co_entidade] = ano_ideb
             if ano_ideb is not None:
                 por_ano[ano_ideb].append(co_entidade)
 
-        resultado: dict[int, float | None] = {co: None for co, _ in entidades}
+        # Estrutura separada por tabela
+        resultado: dict[int, dict[str, float | None]] = {
+            co: {"iniciais": None, "finais": None} for co, _ in entidades
+        }
 
         session = self._session
-        for ano_ideb, co_list in por_ano.items():
-            for ano_ideb, co_list in por_ano.items():
-                col_name = f"IDEB({ano_ideb})"
+        tabelas = [
+            (ideb_anos_iniciais_escolas, "iniciais"),
+            (ideb_anos_finais_escolas,   "finais"),
+        ]
 
-                for table in (ideb_anos_iniciais_escolas, ideb_anos_finais_escolas):
-                    if col_name not in table.c:
-                        continue
-                    col = table.c[col_name]
-                    stmt = (
-                        select(table.c["CO_ENTIDADE"], col)
-                        .where(
-                            table.c["CO_ENTIDADE"].in_(co_list),
-                            col.is_not(None),
-                        )
+        for ano_ideb, co_list in por_ano.items():
+            col_name = f"IDEB({ano_ideb})"
+
+            for table, chave in tabelas:
+                if col_name not in table.c:
+                    continue
+                col = table.c[col_name]
+                stmt = (
+                    select(table.c["CO_ENTIDADE"], col)
+                    .where(
+                        table.c["CO_ENTIDADE"].in_(co_list),
+                        col.is_not(None),
                     )
-                    rows = (await session.execute(stmt)).fetchall()
-                    for co_entidade, nota in rows:
-                        # Inicial tem precedência; só sobrescreve None.
-                        if resultado.get(co_entidade) is None:
-                            resultado[co_entidade] = float(nota)
+                )
+                rows = (await session.execute(stmt)).fetchall()
+                for co_entidade, nota in rows:
+                    resultado[co_entidade][chave] = float(nota)
 
         return resultado

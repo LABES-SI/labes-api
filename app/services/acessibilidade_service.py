@@ -610,8 +610,7 @@ class AcessibilidadeService:
         combine_or: bool,
         municipios: list[str] | None,
     ) -> dict:
-        """Envelopa o gráfico de barras empilhadas de métricas por escola."""
-        ideb_map = await self._repository.find_ideb_por_entidades(
+        ideb_map: dict[int, dict[str, float | None]] = await self._repository.find_ideb_por_entidades(
             [(r.co_entidade, r.nu_ano_censo) for r in records]
         )
 
@@ -635,7 +634,7 @@ class AcessibilidadeService:
     def _build_metricas_por_escola_figure(
         records: list[AcessibilidadeEscola],
         titulo: str,
-        ideb_map: dict[int, float | None],
+        ideb_map: dict[int, dict[str, float | None]],
     ) -> go.Figure:
         """Uma barra horizontal empilhada por escola: cada métrica é um slot de
         largura 1, colorido se a escola possui (=1) ou cinza se não. Legenda
@@ -664,16 +663,21 @@ class AcessibilidadeService:
                             rotulo,
                             "Possui" if p else "Não possui",
                             r.nu_ano_censo,
-                            # Nota real ou "N/D" quando ausente
-                            ideb_map.get(r.co_entidade),
+                            # Anos iniciais
+                            f"{ideb_map.get(r.co_entidade, {}).get('iniciais'):.1f}"
+                            if ideb_map.get(r.co_entidade, {}).get("iniciais") is not None
+                            else "N/D",
+                            # Anos finais
+                            f"{ideb_map.get(r.co_entidade, {}).get('finais'):.1f}"
+                            if ideb_map.get(r.co_entidade, {}).get("finais") is not None
+                            else "N/D",
                         ]
                         for r, p in zip(records, possui)
                     ],
                     hovertemplate=(
                         "<b>%{y}</b> (censo %{customdata[2]})<br>"
-                        # Plotly renderiza None como "null"; tratamos com
-                        # um ternário via customdata.
-                        "IDEB: %{customdata[3]}<br>"
+                        "IDEB Anos Iniciais: %{customdata[3]}<br>"
+                        "IDEB Anos Finais: %{customdata[4]}<br>"
                         "%{customdata[0]}: %{customdata[1]}<extra></extra>"
                     ),
                     showlegend=False,
