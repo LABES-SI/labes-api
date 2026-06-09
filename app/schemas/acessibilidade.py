@@ -37,10 +37,23 @@ class DadosFiltros(BaseModel):
     rede_ensino: list[str]
 
 
+class Paginacao(BaseModel):
+    """Metadados de paginação do gráfico de métricas por escola."""
+
+    page: int = Field(..., ge=0, description="Página atual (base 0).")
+    page_size: int = Field(..., ge=1, description="Escolas por página.")
+    total_escolas: int = Field(..., ge=0, description="Total de escolas no recorte.")
+    total_paginas: int = Field(..., ge=0, description="Total de páginas disponíveis.")
+
+
 class PainelData(BaseModel):
     graficos: dict[str, Grafico] = Field(
         ...,
         description="Mapa de gráficos do painel, indexados por chave semântica.",
+    )
+    paginacao_escolas: Paginacao = Field(
+        ...,
+        description="Paginação do gráfico de métricas por escola embutido (1ª página).",
     )
     dados_filtros: DadosFiltros = Field(
         ...,
@@ -53,6 +66,18 @@ class PainelResponse(BaseModel):
 
     descricao: str = Field(..., description="Identificador semântico do painel.")
     data: PainelData
+
+
+class PainelEscolasData(BaseModel):
+    grafico: Grafico = Field(..., description="Gráfico de métricas por escola (página atual).")
+    paginacao: Paginacao = Field(..., description="Metadados de paginação.")
+
+
+class PainelEscolasResponse(BaseModel):
+    """Resposta paginada do gráfico de métricas por escola."""
+
+    descricao: str = Field(..., description="Identificador semântico do recurso.")
+    data: PainelEscolasData
 
 
 class MapaPonto(BaseModel):

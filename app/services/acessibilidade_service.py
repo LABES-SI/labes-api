@@ -71,6 +71,9 @@ ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_acessibilidade"
 TAB_PERCENT_ROW_HEIGHT_PX = 42
 TAB_PERCENT_HEADER_PX = 130
 TAB_PERCENT_VISIBLE_ROWS = 5
+# Escolas por página no gráfico de métricas por escola (default do /painel e
+# do endpoint dedicado /painel/escolas).
+PAINEL_ESCOLAS_PAGE_SIZE = 5
 
 
 class AcessibilidadeService:
@@ -102,23 +105,10 @@ class AcessibilidadeService:
         - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
           aos numerador e denominador).
         """
-        combine_or = not variaveis
-        # "Sem filtro" = nenhum recorte aplicado. O gráfico por escola usa esse
-        # estado para limitar ao top 10 (maior score); com qualquer filtro,
-        # traz todas as escolas que casam.
-        is_unfiltered = (
-            combine_or
-            and ano is None
-            and not municipios
-            and not rede_ensino
-            and not tp_localizacao
-        )
-        if combine_or:
-            variaveis = [chave for chave, _ in METRIC_FIELDS]
-        else:
-            for v in variaveis:
-                if v not in METRICS_BY_KEY:
-                    raise ValueError(f"Variável inválida: {v!r}. Esperado uma de: {sorted(METRICS_BY_KEY)}")
+        # Mantém a entrada crua para repassar ao gráfico paginado por escola
+        # (build_painel_escolas resolve por conta própria).
+        variaveis_filtro = variaveis
+        variaveis, combine_or = self._resolver_variaveis(variaveis)
 
         records = await self._repository.find_media_por_municipio(
             variaveis=variaveis,
@@ -163,16 +153,6 @@ class AcessibilidadeService:
             tp_localizacao=tp_localizacao,
         )
 
-        escola_records = await self._repository.find_metricas_por_escola(
-            variaveis=variaveis,
-            combine_or=combine_or,
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-            limit=10 if is_unfiltered else None,
-        )
-
         municipios_disponiveis = await self._repository.find_municipios_disponiveis()
         anos_disponiveis = await self._repository.find_anos_disponiveis()
 
@@ -195,8 +175,14 @@ class AcessibilidadeService:
         grafico_tp_localizacao = self._build_localizacao_chart(
             loc_records, variaveis, combine_or, ano,
         )
-        grafico_metricas_por_escola = await self._build_metricas_por_escola(
-            escola_records, ano, variaveis, combine_or, municipios,
+        painel_escolas = await self.build_painel_escolas(
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+            variaveis=variaveis_filtro,
+            page=0,
+            page_size=PAINEL_ESCOLAS_PAGE_SIZE,
         )
 
         return {
@@ -208,8 +194,9 @@ class AcessibilidadeService:
                     "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
-                    "grafico_metricas_por_escola_acessibilidade": grafico_metricas_por_escola,
+                    "grafico_metricas_por_escola_acessibilidade": painel_escolas["grafico"],
                 },
+                "paginacao_escolas": painel_escolas["paginacao"],
                 "dados_filtros": {
                     "municipios": [
                         {"codigo": codigo, "nome": nome}
@@ -223,6 +210,85 @@ class AcessibilidadeService:
                     "rede_ensino": REDES_ENSINO,
                     "tp_localizacao": TIPOS_LOCALIZACAO,
                 },
+            },
+        }
+
+    async def build_painel_escolas(
+        self,
+        ano: int | None,
+        municipios: list[str] | None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+        variaveis: list[str] | None = None,
+        page: int = 0,
+        page_size: int = PAINEL_ESCOLAS_PAGE_SIZE,
+    ) -> dict:
+        """Uma página do gráfico de métricas por escola (barras empilhadas),
+        ordenado por score DESC e com os mesmos filtros do painel.
+
+        Retorna `{"grafico": <envelope>, "paginacao": {...}}`. O front usa a
+        paginação para navegar as demais escolas batendo só neste caminho leve,
+        sem reprocessar o painel inteiro a cada virada de página.
+        """
+        variaveis_efetivas, combine_or = self._resolver_variaveis(variaveis)
+
+        total_escolas = await self._repository.count_metricas_por_escola(
+            variaveis=variaveis_efetivas,
+            combine_or=combine_or,
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
+
+        records = await self._repository.find_metricas_por_escola(
+            variaveis=variaveis_efetivas,
+            combine_or=combine_or,
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+            limit=page_size,
+            offset=page * page_size,
+        )
+
+        entidades = [(r.co_entidade, r.nu_ano_censo) for r in records]
+        ideb_map = await self._repository.find_ideb_por_entidades(entidades)
+        pibid_map = await self._repository.find_pibid_por_entidades(entidades)
+
+        total_paginas = (
+            (total_escolas + page_size - 1) // page_size if page_size else 0
+        )
+        inicio = page * page_size
+
+        label = self._filtro_variaveis_label(variaveis_efetivas, combine_or)
+        recorte = self._recorte_escola_label(ano, records)
+        sufixo_municipio = (
+            f" {self._municipios_label(municipios)}" if municipios else ""
+        )
+        intervalo = (
+            f"  |  escolas {inicio + 1}–{inicio + len(records)} de {total_escolas}"
+            if records
+            else "  |  0 escolas"
+        )
+        titulo = (
+            f"Métricas de acessibilidade por escola com {label}"
+            f"{sufixo_municipio} — {recorte}{intervalo}"
+        )
+        figure = self._build_metricas_por_escola_figure(
+            records, titulo, ideb_map, pibid_map
+        )
+        return {
+            "grafico": {
+                "tipo": "bar",
+                "titulo": titulo,
+                "plotly": json.loads(figure.to_json()),
+            },
+            "paginacao": {
+                "page": page,
+                "page_size": page_size,
+                "total_escolas": total_escolas,
+                "total_paginas": total_paginas,
             },
         }
 
@@ -293,6 +359,26 @@ class AcessibilidadeService:
     # ========================================================================
     # LABEL & TITLE HELPERS
     # ========================================================================
+
+    @staticmethod
+    def _resolver_variaveis(variaveis: list[str] | None) -> tuple[list[str], bool]:
+        """Normaliza o filtro de variáveis do painel.
+
+        - Vazio/None → OR sobre TODAS as 17 variáveis (escola conta com
+          QUALQUER variável = 1).
+        - Preenchido → AND, validando cada chave contra a whitelist.
+
+        Retorna `(variaveis_efetivas, combine_or)`.
+        """
+        if not variaveis:
+            return [chave for chave, _ in METRIC_FIELDS], True
+        for v in variaveis:
+            if v not in METRICS_BY_KEY:
+                raise ValueError(
+                    f"Variável inválida: {v!r}. Esperado uma de: "
+                    f"{sorted(METRICS_BY_KEY)}"
+                )
+        return variaveis, False
 
     @staticmethod
     def _filtro_variaveis_label(variaveis: list[str], combine_or: bool) -> str:
@@ -618,49 +704,44 @@ class AcessibilidadeService:
         )
         return fig
 
-    async def _build_metricas_por_escola(
-        self,
-        records: list[AcessibilidadeEscola],
-        ano: int | None,
-        variaveis: list[str],
-        combine_or: bool,
-        municipios: list[str] | None,
-    ) -> dict:
-        ideb_map: dict[int, dict[str, float | None]] = await self._repository.find_ideb_por_entidades(
-            [(r.co_entidade, r.nu_ano_censo) for r in records]
-        )
-
-        label = self._filtro_variaveis_label(variaveis, combine_or)
-        recorte = self._recorte_escola_label(ano, records)
-        sufixo_municipio = (
-            f" {self._municipios_label(municipios)}" if municipios else ""
-        )
-        titulo = (
-            f"Métricas de acessibilidade por escola com {label}"
-            f"{sufixo_municipio} — {recorte}"
-        )
-        figure = self._build_metricas_por_escola_figure(records, titulo, ideb_map)
-        return {
-            "tipo": "bar",
-            "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
-        }
-
     @staticmethod
     def _build_metricas_por_escola_figure(
         records: list[AcessibilidadeEscola],
         titulo: str,
         ideb_map: dict[int, dict[str, float | None]],
+        pibid_map: dict[int, dict[str, object]],
     ) -> go.Figure:
         """Uma barra horizontal empilhada por escola: cada métrica é um slot de
-        largura 1, colorido se a escola possui (=1) ou cinza se não. Legenda
-        manual agrupada (Infraestrutura × Profissionais) e anotação n/17 ao
-        final de cada barra. Os registros chegam ordenados por score DESC; o
-        eixo Y é invertido para o maior score ficar no topo."""
+        largura 1, colorido se a escola possui (=1) ou cinza se não. Hover traz
+        PIBID (subprojeto + bolsistas ativos) e IDEB (anos iniciais/finais/
+        ensino médio). Legenda manual agrupada (Infraestrutura × Profissionais)
+        e anotação n/17 ao final de cada barra. Os registros chegam ordenados
+        por score DESC; o eixo Y é invertido para o maior score ficar no topo."""
         fig = go.Figure()
         escolas = [r.no_entidade for r in records]
         n = len(records)
         n_metricas = len(METRIC_ESCOLA_FIELDS)
+
+        def _ideb_texto(co: int) -> str:
+            notas = ideb_map.get(co, {})
+            partes = [
+                f"{rotulo}: {notas[chave]:.1f}"
+                for chave, rotulo in (
+                    ("iniciais", "Anos Iniciais"),
+                    ("finais", "Anos Finais"),
+                    ("medio", "Ensino Médio"),
+                )
+                if notas.get(chave) is not None
+            ]
+            return "<br>".join(partes) if partes else "sem registro"
+
+        def _pibid_subprojeto(co: int) -> str:
+            sub = pibid_map.get(co, {}).get("subprojetos")
+            return sub if sub else "Sem registro"
+
+        def _pibid_bolsistas(co: int) -> object:
+            bolsistas = pibid_map.get(co, {}).get("bolsistas")
+            return bolsistas if bolsistas is not None else "—"
 
         # Uma barra empilhada por métrica (slot fixo de largura 1).
         for chave, rotulo, cor, _grupo in METRIC_ESCOLA_FIELDS:
@@ -679,22 +760,21 @@ class AcessibilidadeService:
                             rotulo,
                             "Possui" if p else "Não possui",
                             r.nu_ano_censo,
-                            # Anos iniciais
-                            f"{ideb_map.get(r.co_entidade, {}).get('iniciais'):.1f}"
-                            if ideb_map.get(r.co_entidade, {}).get("iniciais") is not None
-                            else "N/D",
-                            # Anos finais
-                            f"{ideb_map.get(r.co_entidade, {}).get('finais'):.1f}"
-                            if ideb_map.get(r.co_entidade, {}).get("finais") is not None
-                            else "N/D",
+                            _pibid_subprojeto(r.co_entidade),
+                            _pibid_bolsistas(r.co_entidade),
+                            _ideb_texto(r.co_entidade),
                         ]
                         for r, p in zip(records, possui)
                     ],
                     hovertemplate=(
                         "<b>%{y}</b> (censo %{customdata[2]})<br>"
-                        "IDEB Anos Iniciais: %{customdata[3]}<br>"
-                        "IDEB Anos Finais: %{customdata[4]}<br>"
-                        "%{customdata[0]}: %{customdata[1]}<extra></extra>"
+                        "%{customdata[0]}: %{customdata[1]}<br>"
+                        "<br><b>PIBID</b><br>"
+                        "Subprojeto: %{customdata[3]}<br>"
+                        "Bolsistas ativos: %{customdata[4]}<br>"
+                        "<br><b>IDEB</b><br>"
+                        "%{customdata[5]}"
+                        "<extra></extra>"
                     ),
                     showlegend=False,
                 )
