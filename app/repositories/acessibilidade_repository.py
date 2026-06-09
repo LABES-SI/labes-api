@@ -15,12 +15,14 @@ from app.domain.acessibilidade import (
     AcessibilidadeTemporalDependencia,
 )
 from app.models.acessibilidade import (
+    base_pibid,
     dim_entidade,
     dim_municipio,
     dim_tp_dependencia,
     dim_tp_localizacao,
     ideb_anos_finais_escolas,
     ideb_anos_iniciais_escolas,
+    ideb_ensino_medio_escolas,
     fato_acessibilidade,
 )
 
@@ -799,30 +801,21 @@ class AcessibilidadeRepository:
         result = await self._session.execute(stmt)
         return [_row_to_localizacao(row) for row in result]
 
-    async def find_metricas_por_escola(
+    def _build_metricas_escola_subquery(
         self,
         *,
         variaveis: list[str],
-        combine_or: bool = False,
-        ano: int | None = None,
-        municipios: list[str] | None = None,
-        rede_ensino: list[str] | None = None,
-        tp_localizacao: list[str] | None = None,
-        limit: int | None = None,
-    ) -> list[AcessibilidadeEscola]:
-        """
-        Lista escolas com o valor (0/1) de cada uma das 17 métricas de
-        acessibilidade e o score (soma das 17), aplicando a mesma regra de
-        filtro dos demais gráficos do painel.
-
-        - `combine_or=False`: escola entra se tiver TODAS as variáveis = 1 (AND).
-        - `combine_or=True`: escola entra se tiver QUALQUER variável = 1 (OR;
-          usado quando o filtro de variáveis chega vazio).
-        - Sem `ano`: dedup para o censo mais recente de cada escola
-          (row_number por co_entidade, nu_ano_censo DESC).
-        - `limit`: usado pelo painel para trazer só o top N (maior score)
-          quando nenhum filtro é aplicado.
-        """
+        combine_or: bool,
+        ano: int | None,
+        municipios: list[str] | None,
+        rede_ensino: list[str] | None,
+        tp_localizacao: list[str] | None,
+    ):
+        """Subquery base do gráfico de métricas por escola: uma linha por
+        (escola, censo) com as 17 métricas, o score e o `rn` (row_number por
+        escola, censo DESC) para dedup do censo mais recente. Compartilhada por
+        `find_metricas_por_escola` (lista paginada) e `count_metricas_por_escola`
+        (total para a paginação)."""
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
         metric_predicate = _build_metric_predicate(variaveis, combine_or)
@@ -879,7 +872,41 @@ class AcessibilidadeRepository:
         if tp_localizacao:
             base = base.where(l.no_tp_localizacao.in_(tp_localizacao))
 
-        sub = base.subquery()
+        return base.subquery()
+
+    async def find_metricas_por_escola(
+        self,
+        *,
+        variaveis: list[str],
+        combine_or: bool = False,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[AcessibilidadeEscola]:
+        """
+        Lista escolas com o valor (0/1) de cada uma das 17 métricas de
+        acessibilidade e o score (soma das 17), aplicando a mesma regra de
+        filtro dos demais gráficos do painel.
+
+        - `combine_or=False`: escola entra se tiver TODAS as variáveis = 1 (AND).
+        - `combine_or=True`: escola entra se tiver QUALQUER variável = 1 (OR;
+          usado quando o filtro de variáveis chega vazio).
+        - Sem `ano`: dedup para o censo mais recente de cada escola
+          (row_number por co_entidade, nu_ano_censo DESC).
+        - `limit`/`offset`: usados pelo painel para paginar o gráfico por escola
+          (ordenado por score DESC). Use `count_metricas_por_escola` para o total.
+        """
+        sub = self._build_metricas_escola_subquery(
+            variaveis=variaveis,
+            combine_or=combine_or,
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
         stmt = (
             select(sub)
             .where(sub.c.rn == 1)
@@ -887,9 +914,35 @@ class AcessibilidadeRepository:
         )
         if limit is not None:
             stmt = stmt.limit(limit)
+        if offset is not None:
+            stmt = stmt.offset(offset)
 
         result = await self._session.execute(stmt)
         return [_row_to_escola(row) for row in result.mappings()]
+
+    async def count_metricas_por_escola(
+        self,
+        *,
+        variaveis: list[str],
+        combine_or: bool = False,
+        ano: int | None = None,
+        municipios: list[str] | None = None,
+        rede_ensino: list[str] | None = None,
+        tp_localizacao: list[str] | None = None,
+    ) -> int:
+        """Total de escolas (após dedup do censo mais recente) que casam com os
+        filtros — denominador da paginação do gráfico por escola."""
+        sub = self._build_metricas_escola_subquery(
+            variaveis=variaveis,
+            combine_or=combine_or,
+            ano=ano,
+            municipios=municipios,
+            rede_ensino=rede_ensino,
+            tp_localizacao=tp_localizacao,
+        )
+        stmt = select(func.count()).select_from(sub).where(sub.c.rn == 1)
+        total = await self._session.scalar(stmt)
+        return int(total or 0)
 
     #P1G6
     async def find_evolucao_por_dependencia(
@@ -958,8 +1011,9 @@ class AcessibilidadeRepository:
         entidades: list[tuple[int, int]],
     ) -> dict[int, dict[str, float | None]]:
         """
-        Retorna {co_entidade: {"iniciais": float|None, "finais": float|None}}
-        para cada escola, buscando a nota IDEB do ano mais próximo disponível.
+        Retorna {co_entidade: {"iniciais": ..., "finais": ..., "medio": ...}}
+        para cada escola, buscando a nota IDEB do ano mais próximo disponível
+        em cada uma das três etapas (anos iniciais, anos finais e ensino médio).
         """
         if not entidades:
             return {}
@@ -980,13 +1034,15 @@ class AcessibilidadeRepository:
 
         # Estrutura separada por tabela
         resultado: dict[int, dict[str, float | None]] = {
-            co: {"iniciais": None, "finais": None} for co, _ in entidades
+            co: {"iniciais": None, "finais": None, "medio": None}
+            for co, _ in entidades
         }
 
         session = self._session
         tabelas = [
             (ideb_anos_iniciais_escolas, "iniciais"),
             (ideb_anos_finais_escolas,   "finais"),
+            (ideb_ensino_medio_escolas,  "medio"),
         ]
 
         for ano_ideb, co_list in por_ano.items():
@@ -1006,5 +1062,51 @@ class AcessibilidadeRepository:
                 rows = (await session.execute(stmt)).fetchall()
                 for co_entidade, nota in rows:
                     resultado[co_entidade][chave] = float(nota)
+
+        return resultado
+
+    async def find_pibid_por_entidades(
+        self,
+        entidades: list[tuple[int, int]],
+    ) -> dict[int, dict[str, object]]:
+        """
+        Retorna {co_entidade: {"subprojetos": str|None, "bolsistas": int|None}}
+        para cada escola, lendo silver.base_pibid no mesmo ano do censo da escola.
+
+        Mesmo padrão de bucketing por ano de `find_ideb_por_entidades`: agrupa as
+        entidades por `nu_ano_censo` e, por ano, agrega os subprojetos
+        (STRING_AGG distinto) e o total de bolsistas ativos.
+        """
+        if not entidades:
+            return {}
+
+        from collections import defaultdict
+        por_ano: dict[int, list[int]] = defaultdict(list)
+        for co_entidade, nu_ano_censo in entidades:
+            por_ano[nu_ano_censo].append(co_entidade)
+
+        resultado: dict[int, dict[str, object]] = {
+            co: {"subprojetos": None, "bolsistas": None} for co, _ in entidades
+        }
+
+        p = base_pibid.c
+        for ano, co_list in por_ano.items():
+            stmt = (
+                select(
+                    p.CO_ENTIDADE,
+                    func.string_agg(p.SUBPROJETO.distinct(), literal(" / ")).label(
+                        "subprojetos"
+                    ),
+                    func.max(p.QTD_BOLSISTAS_ATIVOS).label("bolsistas"),
+                )
+                .where(p.ANO == ano, p.CO_ENTIDADE.in_(co_list))
+                .group_by(p.CO_ENTIDADE)
+            )
+            rows = (await self._session.execute(stmt)).fetchall()
+            for co_entidade, subprojetos, bolsistas in rows:
+                resultado[co_entidade] = {
+                    "subprojetos": subprojetos,
+                    "bolsistas": int(bolsistas) if bolsistas is not None else None,
+                }
 
         return resultado

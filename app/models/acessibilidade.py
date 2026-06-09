@@ -111,3 +111,30 @@ ideb_anos_finais_escolas = Table(
     Column("IDEB(2021)", Numeric),
     Column("IDEB(2023)", Numeric),
 )
+
+
+ideb_ensino_medio_escolas = Table(
+    "ideb_ensino_medio_escolas",
+    metadata,
+    Column("CO_ENTIDADE", Integer),
+    Column("IDEB(2005)", Numeric),
+    Column("IDEB(2007)", Numeric),
+    Column("IDEB(2009)", Numeric),
+    Column("IDEB(2011)", Numeric),
+    Column("IDEB(2013)", Numeric),
+    Column("IDEB(2015)", Numeric),
+    Column("IDEB(2017)", Numeric),
+    Column("IDEB(2019)", Numeric),
+    Column("IDEB(2021)", Numeric),
+    Column("IDEB(2023)", Numeric),
+)
+
+
+base_pibid = Table(
+    "base_pibid",
+    metadata,
+    Column("ANO", Integer),
+    Column("CO_ENTIDADE", Integer),
+    Column("SUBPROJETO", String),
+    Column("QTD_BOLSISTAS_ATIVOS", Integer),
+)

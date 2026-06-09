@@ -6,6 +6,7 @@ from app.core.dependencies import get_acessibilidade_service
 from app.schemas.acessibilidade import (
     AnaliseTemporalResponse,
     MapaResponse,
+    PainelEscolasResponse,
     PainelResponse,
 )
 from app.services.acessibilidade_service import AcessibilidadeService
@@ -83,6 +84,55 @@ async def get_painel_acessibilidade(
         variaveis=variaveis,
     )
     return PainelResponse(**envelope)
+
+
+@router.get(
+    "/painel/escolas",
+    response_model=PainelEscolasResponse,
+    summary="Gráfico paginado de métricas de acessibilidade por escola",
+)
+async def get_painel_escolas_acessibilidade(
+    ano: int | None = Query(
+        None,
+        description="Ano do censo escolar (ex: 2023). Se omitido, usa o censo mais recente de cada escola.",
+    ),
+    municipios: list[str] | None = Query(
+        None,
+        max_length=4,
+        description="Lista de municípios (até 4). Use o parâmetro repetido.",
+    ),
+    variaveis: list[VariavelAcessibilidade] | None = Query(
+        None,
+        description="Filtro AND: escolas precisam ter TODAS as variáveis marcadas = 1.",
+    ),
+    rede_ensino: list[RedeEnsino] | None = Query(
+        None,
+        description="Rede(s) de ensino: Federal, Estadual, Municipal, Privada.",
+    ),
+    tp_localizacao: list[TpLocalizacao] | None = Query(
+        None,
+        description="Localização da escola: Urbana ou Rural.",
+    ),
+    page: int = Query(0, ge=0, description="Página (base 0)."),
+    page_size: int = Query(5, ge=1, le=50, description="Escolas por página (1–50)."),
+    service: AcessibilidadeService = Depends(get_acessibilidade_service),
+) -> PainelEscolasResponse:
+    """Retorna uma página do gráfico de métricas por escola (barras empilhadas,
+    ordenado por score DESC) + metadados de paginação. Pensado para o frontend
+    navegar as demais escolas sem reprocessar o painel inteiro."""
+    resultado = await service.build_painel_escolas(
+        ano=ano,
+        municipios=municipios,
+        rede_ensino=rede_ensino,
+        tp_localizacao=tp_localizacao,
+        variaveis=variaveis,
+        page=page,
+        page_size=page_size,
+    )
+    return PainelEscolasResponse(
+        descricao="painel_acessibilidade_escolas",
+        data=resultado,
+    )
 
 
 @router.get(
