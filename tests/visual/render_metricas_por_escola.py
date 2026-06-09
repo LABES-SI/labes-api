@@ -1,16 +1,17 @@
 """Renderiza o gráfico "Métricas de acessibilidade por escola" indo até o banco.
 
-Percorre o mesmo caminho usado pela rota `/acessibilidade/painel`: abre uma
-sessão no warehouse, instancia o repositório e o serviço, chama `build_painel`,
-reconstrói a figura a partir do JSON Plotly retornado e salva como HTML.
+Percorre o mesmo caminho usado pela rota `/acessibilidade/painel/escolas`: abre
+uma sessão no warehouse, instancia o repositório e o serviço, chama
+`build_painel_escolas`, reconstrói a figura a partir do JSON Plotly retornado e
+salva como HTML.
 
-Sem filtros, o painel limita o gráfico ao top 10 (maior score). Com qualquer
-filtro (--ano/--municipio/--variavel/--rede_ensino/--tp_localizacao), traz todas
-as escolas que casam — por isso o wrapper de scroll.
+O gráfico é paginado (ordenado por score DESC): cada chamada traz uma página de
+`--page_size` escolas a partir de `--page` (base 0), mais os metadados de
+paginação (total de escolas / páginas).
 
 Uso:
-    uv run python -m tests.visual.render_metricas_por_escola
-    uv run python -m tests.visual.render_metricas_por_escola --ano 2024 --municipio Tucuruí
+    uv run python -m tests.visual.render_metricas_por_escola --ano 2023 --municipio Abaetetuba
+    uv run python -m tests.visual.render_metricas_por_escola --ano 2023 --municipio Abaetetuba --page 1 --page_size 5
     # abre tests/visual/out/metricas_por_escola.html
 """
 
@@ -50,22 +51,26 @@ SCROLL_TEMPLATE = """<!doctype html>
 """
 
 
-async def _build_painel(
+async def _build_pagina(
     ano: int | None,
     municipios: list[str] | None,
     variaveis: list[str] | None = None,
     rede_ensino: list[str] | None = None,
     tp_localizacao: list[str] | None = None,
+    page: int = 0,
+    page_size: int = 5,
 ) -> dict:
     async with SessionLocal() as session:
         repository = AcessibilidadeRepository(session)
         service = AcessibilidadeService(repository)
-        return await service.build_painel(
+        return await service.build_painel_escolas(
             ano=ano,
             municipios=municipios,
             variaveis=variaveis,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
+            page=page,
+            page_size=page_size,
         )
 
 
@@ -75,19 +80,24 @@ async def _run(
     variaveis: list[str] | None,
     rede_ensino: list[str] | None,
     tp_localizacao: list[str] | None,
+    page: int = 0,
+    page_size: int = 5,
 ) -> Path:
     try:
-        painel = await _build_painel(
+        resultado = await _build_pagina(
             ano=ano,
             municipios=municipios,
             variaveis=variaveis,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
+            page=page,
+            page_size=page_size,
         )
     finally:
         await async_engine.dispose()
 
-    grafico = painel["data"]["graficos"]["grafico_metricas_por_escola_acessibilidade"]
+    grafico = resultado["grafico"]
+    paginacao = resultado["paginacao"]
     plotly_payload = grafico["plotly"]
 
     figure = pio.from_json(json.dumps(plotly_payload))
@@ -111,7 +121,12 @@ async def _run(
     n_escolas = len(plotly_payload["data"][0]["y"]) if plotly_payload["data"] else 0
     print(f"Gráfico renderizado em: {out_file}")
     print(f"Título: {grafico['titulo']}")
-    print(f"Escolas: {n_escolas}")
+    print(f"Escolas nesta página: {n_escolas}")
+    print(
+        f"Paginação: page {paginacao['page']} / "
+        f"{max(paginacao['total_paginas'] - 1, 0)} "
+        f"(page_size={paginacao['page_size']}, total={paginacao['total_escolas']})"
+    )
     return out_file
 
 
@@ -146,6 +161,10 @@ def main() -> Path:
         default=None,
         help="Repita para passar múltiplas localizações (Urbana/Rural).",
     )
+    parser.add_argument("--page", type=int, default=0, help="Página (base 0).")
+    parser.add_argument(
+        "--page_size", type=int, default=5, help="Escolas por página."
+    )
     args = parser.parse_args()
 
     return asyncio.run(
@@ -155,6 +174,8 @@ def main() -> Path:
             variaveis=args.variaveis,
             rede_ensino=args.rede_ensino,
             tp_localizacao=args.tp_localizacao,
+            page=args.page,
+            page_size=args.page_size,
         )
     )
 
