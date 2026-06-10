@@ -12,3 +12,4 @@ services:
 
 networks:
   labes-network:
+    external: true
