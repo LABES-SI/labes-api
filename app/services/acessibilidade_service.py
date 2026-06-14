@@ -11,11 +11,8 @@ from app.domain.acessibilidade import (
     AcessibilidadeLocalizacao,
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
-    #P1G4
     TotalEscolas,
-    #P1G5
     AcessibilidadeDependencia,
-    #P1G6
     AcessibilidadeTemporalDependencia,
 )
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
@@ -83,6 +80,8 @@ PAINEL_ESCOLAS_PAGE_SIZE = 5
 
 
 class AcessibilidadeService:
+    """Serviço de acessibilidade: monta painéis, mapas e gráficos de evolução temporal."""
+
     def __init__(self, repository: AcessibilidadeRepository):
         self._repository = repository
 
@@ -367,6 +366,10 @@ class AcessibilidadeService:
             },
         }
 
+    # ========================================================================
+    # LABEL & TITLE HELPERS
+    # ========================================================================
+
     @staticmethod
     def _resolver_variaveis(variaveis: list[str] | None) -> tuple[list[str], bool]:
         """Normaliza o filtro de variáveis do painel.
@@ -466,6 +469,10 @@ class AcessibilidadeService:
             "plotly": self._figure_to_plotly_dict(figure),
         }
 
+    # ========================================================================
+    # DATAFRAME BUILDERS - Conversão de registros para DataFrames (Pandas)
+    # ========================================================================
+
     @staticmethod
     def _records_to_dataframe(records: list[AcessibilidadeMunicipio]) -> pd.DataFrame:
         rows = [
@@ -489,6 +496,10 @@ class AcessibilidadeService:
             for r in records
         ]
         return pd.DataFrame(rows)
+
+    # ========================================================================
+    # FIGURE BUILDERS - Renderização Plotly para gráficos
+    # ========================================================================
 
     @staticmethod
     def _build_tab_percent_figure(
@@ -793,7 +804,6 @@ class AcessibilidadeService:
         )
         return fig
 
-    #P1G6
     @staticmethod
     def _temporal_dependencia_to_dataframe(
         records: list[AcessibilidadeTemporalDependencia],
@@ -808,7 +818,6 @@ class AcessibilidadeService:
         ]
         return pd.DataFrame(rows)
 
-    #P1G6
     def _build_evolucao_temporal_dependencia(
         self,
         records: list[AcessibilidadeTemporalDependencia],
@@ -828,7 +837,6 @@ class AcessibilidadeService:
             "plotly": self._figure_to_plotly_dict(figure),
         }
 
-    #P1G6
     @staticmethod
     def _build_evolucao_temporal_dependencia_figure(
         df: pd.DataFrame,
@@ -852,6 +860,10 @@ class AcessibilidadeService:
             titulo=titulo,
             y_axis_title="Percentual de Acessibilidade",
         )
+
+    # ========================================================================
+    # AUXILIARY METHODS - Métodos auxiliares (mocks, etc)
+    # ========================================================================
 
     @staticmethod
     def _mock_ideb_score(co_entidade: int, score_acessibilidade: int) -> float:
