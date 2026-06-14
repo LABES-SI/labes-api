@@ -1,24 +1,4 @@
 services:
-  postgres:
-    image: docker.io/library/postgres:18
-    container_name: postgres-sie
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: sie
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    networks:
-      - backend
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d sie"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
   api:
     build:
       context: .
@@ -27,24 +7,9 @@ services:
     env_file: .env
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
-      - backend
-      - frontend
-
-  # frontend:
-  #   image: <imagem-do-front>
-  #   container_name: labes-front
-  #   ports:
-  #     - "3000:3000"
-  #   networks:
-  #     - frontend
-
-volumes:
-  postgres_data:
+      - labes-network
 
 networks:
-  backend:
-  frontend:
+  labes-network:
+    external: true
