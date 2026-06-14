@@ -12,6 +12,7 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 from app.services.acessibilidade_service import AcessibilidadeService
+from app.services.filtros_service import FiltrosService
 
 
 async_engine = create_async_engine(
@@ -56,11 +57,20 @@ def get_acessibilidade_service(
     return AcessibilidadeService(repository)
 
 
+def get_filtros_service(
+    repository: AcessibilidadeRepository = Depends(get_acessibilidade_repository),
+) -> FiltrosService:
+    # Reaproveita o mesmo repositório/pool/semáforo — filtros são dimensionais
+    # e compartilhados entre painéis.
+    return FiltrosService(repository)
+
+
 __all__ = [
     "get_current_user",
     "get_warehouse_session",
     "get_acessibilidade_repository",
     "get_acessibilidade_service",
+    "get_filtros_service",
     "async_engine",
     "SessionLocal",
     "warehouse_query_semaphore",

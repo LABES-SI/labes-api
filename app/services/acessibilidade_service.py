@@ -65,9 +65,6 @@ METRIC_ESCOLA_FIELDS: list[tuple[str, str, str, str]] = [
 ]
 COR_AUSENTE = "#E5E5E5"
 
-REDES_ENSINO: list[str] = ["Federal", "Estadual", "Municipal", "Privada"]
-TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
-
 PAINEL_DESCRICAO = "painel_acessibilidade"
 MAPA_DESCRICAO = "mapa_acessibilidade"
 ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_acessibilidade"
@@ -118,8 +115,6 @@ class AcessibilidadeService:
             total_escolas_geral_record,
             dep_records,
             loc_records,
-            municipios_disponiveis,
-            anos_disponiveis,
         ) = await asyncio.gather(
             self._repository.find_media_por_municipio(
                 variaveis=variaveis,
@@ -159,8 +154,6 @@ class AcessibilidadeService:
                 rede_ensino=rede_ensino,
                 tp_localizacao=tp_localizacao,
             ),
-            self._repository.find_municipios_disponiveis(),
-            self._repository.find_anos_disponiveis(),
         )
 
         tab_percent = self._build_tab_percent(records, ano, variaveis, combine_or)
@@ -192,19 +185,6 @@ class AcessibilidadeService:
                     "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
-                },
-                "dados_filtros": {
-                    "municipios": [
-                        {"codigo": codigo, "nome": nome}
-                        for codigo, nome in municipios_disponiveis
-                    ],
-                    "anos": anos_disponiveis,
-                    "metricas": [
-                        {"chave": chave, "label": label}
-                        for chave, label in METRIC_FIELDS
-                    ],
-                    "rede_ensino": REDES_ENSINO,
-                    "tp_localizacao": TIPOS_LOCALIZACAO,
                 },
             },
         }
@@ -342,12 +322,6 @@ class AcessibilidadeService:
                 "graficos": {
                     "evolucao_temporal_por_localizacao": grafico,
                     "evolucao_temporal_por_dependencia": grafico_dependencia,
-                },
-                "dados_filtros": {
-                    "metricas": [
-                        {"chave": chave, "label": label}
-                        for chave, label in METRIC_FIELDS
-                    ],
                 },
             },
         }
