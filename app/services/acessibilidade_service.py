@@ -109,9 +109,6 @@ class AcessibilidadeService:
         - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
           aos numerador e denominador).
         """
-        # Mantém a entrada crua para repassar ao gráfico paginado por escola
-        # (build_painel_escolas resolve por conta própria).
-        variaveis_filtro = variaveis
         variaveis, combine_or = self._resolver_variaveis(variaveis)
 
         # Paralelizar queries independentes com asyncio.gather()
@@ -185,15 +182,6 @@ class AcessibilidadeService:
         grafico_tp_localizacao = self._build_localizacao_chart(
             loc_records, variaveis, combine_or, ano,
         )
-        painel_escolas = await self.build_painel_escolas(
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-            variaveis=variaveis_filtro,
-            page=0,
-            page_size=PAINEL_ESCOLAS_PAGE_SIZE,
-        )
 
         return {
             "descricao": PAINEL_DESCRICAO,
@@ -204,9 +192,7 @@ class AcessibilidadeService:
                     "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
-                    "grafico_metricas_por_escola_acessibilidade": painel_escolas["grafico"],
                 },
-                "paginacao_escolas": painel_escolas["paginacao"],
                 "dados_filtros": {
                     "municipios": [
                         {"codigo": codigo, "nome": nome}

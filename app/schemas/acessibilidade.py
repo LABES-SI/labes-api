@@ -51,10 +51,6 @@ class PainelData(BaseModel):
         ...,
         description="Mapa de gráficos do painel, indexados por chave semântica.",
     )
-    paginacao_escolas: Paginacao = Field(
-        ...,
-        description="Paginação do gráfico de métricas por escola embutido (1ª página).",
-    )
     dados_filtros: DadosFiltros = Field(
         ...,
         description="Opções disponíveis para popular dropdowns do frontend.",
