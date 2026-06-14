@@ -1,5 +1,8 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from sqlalchemy import Numeric, and_, case, func, literal, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.acessibilidade import (
     AcessibilidadeEscola,
@@ -198,8 +201,44 @@ class AcessibilidadeRepository:
     tp_localização). Owner do mart: squad de dados.
     """
 
-    def __init__(self, session: AsyncSession):
-        self._session = session
+    def __init__(
+        self,
+        sessionmaker: async_sessionmaker[AsyncSession],
+        semaphore: asyncio.Semaphore | None = None,
+    ):
+        # Recebe o sessionmaker (não uma sessão única): cada query abre a sua
+        # própria sessão via _execute/_scalar, então o asyncio.gather do service
+        # paraleliza sem corromper a sessão. `semaphore=None` = sem limite
+        # (render scripts isolados em tests/visual).
+        self._sessionmaker = sessionmaker
+        self._semaphore = semaphore
+
+    @asynccontextmanager
+    async def _limit(self):
+        """Adquire o semáforo global de warehouse ANTES de abrir a sessão, para
+        que o teto valha sobre conexões fisicamente em uso. `None` = sem limite."""
+        if self._semaphore is None:
+            yield
+        else:
+            async with self._semaphore:
+                yield
+
+    async def _execute(self, stmt):
+        """Abre uma sessão dedicada para esta query e devolve o Result.
+
+        As queries usam SQLAlchemy Core (Row/mappings, já bufferizados pelo
+        driver async no execute), então o Result continua consumível depois que
+        a sessão fecha — não há I/O lazy nem expire_on_commit em jogo.
+        """
+        async with self._limit():
+            async with self._sessionmaker() as session:
+                return await session.execute(stmt)
+
+    async def _scalar(self, stmt):
+        """Como `_execute`, mas para queries escalares (ex.: COUNT)."""
+        async with self._limit():
+            async with self._sessionmaker() as session:
+                return await session.scalar(stmt)
 
     async def find_media_por_municipio(
         self,
@@ -300,7 +339,7 @@ class AcessibilidadeRepository:
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_municipio(row) for row in result]
 
     async def find_municipios_disponiveis(self) -> list[tuple[int, str]]:
@@ -319,7 +358,7 @@ class AcessibilidadeRepository:
             .distinct()
             .order_by(m.no_municipio)
         )
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [(int(row.codigo), row.nome) for row in result]
 
     async def find_anos_disponiveis(self) -> list[int]:
@@ -439,7 +478,7 @@ class AcessibilidadeRepository:
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
         )
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_mapa_ponto(row) for row in result]
 
     async def find_pontos_mapa_raw(
@@ -461,7 +500,7 @@ class AcessibilidadeRepository:
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
         )
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [
             {
                 "co_entidade": int(r["co_entidade"]),
@@ -534,7 +573,7 @@ class AcessibilidadeRepository:
             .order_by(f.nu_ano_censo, l.no_tp_localizacao)
         )
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_temporal(row) for row in result]
 
     async def _find_distinct(self, column) -> list:
@@ -550,7 +589,7 @@ class AcessibilidadeRepository:
             .distinct()
             .order_by(column)
         )
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [row[0] for row in result]
 
     #P1G4
@@ -608,7 +647,7 @@ class AcessibilidadeRepository:
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
         
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         row = result.first()
 
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
@@ -654,7 +693,7 @@ class AcessibilidadeRepository:
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         row = result.first()
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
 
@@ -728,7 +767,7 @@ class AcessibilidadeRepository:
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_dependencia(row) for row in result]
 
     async def find_media_por_localizacao(
@@ -798,7 +837,7 @@ class AcessibilidadeRepository:
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_localizacao(row) for row in result]
 
     def _build_metricas_escola_subquery(
@@ -917,7 +956,7 @@ class AcessibilidadeRepository:
         if offset is not None:
             stmt = stmt.offset(offset)
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_escola(row) for row in result.mappings()]
 
     async def count_metricas_por_escola(
@@ -941,7 +980,7 @@ class AcessibilidadeRepository:
             tp_localizacao=tp_localizacao,
         )
         stmt = select(func.count()).select_from(sub).where(sub.c.rn == 1)
-        total = await self._session.scalar(stmt)
+        total = await self._scalar(stmt)
         return int(total or 0)
 
     #P1G6
@@ -1002,7 +1041,7 @@ class AcessibilidadeRepository:
             .order_by(f.nu_ano_censo, d.no_tp_dependencia)
         )
 
-        result = await self._session.execute(stmt)
+        result = await self._execute(stmt)
         return [_row_to_temporal_dependencia(row) for row in result]
 
 
@@ -1038,7 +1077,6 @@ class AcessibilidadeRepository:
             for co, _ in entidades
         }
 
-        session = self._session
         tabelas = [
             (ideb_anos_iniciais_escolas, "iniciais"),
             (ideb_anos_finais_escolas,   "finais"),
@@ -1059,7 +1097,7 @@ class AcessibilidadeRepository:
                         col.is_not(None),
                     )
                 )
-                rows = (await session.execute(stmt)).fetchall()
+                rows = (await self._execute(stmt)).fetchall()
                 for co_entidade, nota in rows:
                     resultado[co_entidade][chave] = float(nota)
 
@@ -1102,7 +1140,7 @@ class AcessibilidadeRepository:
                 .where(p.ANO == ano, p.CO_ENTIDADE.in_(co_list))
                 .group_by(p.CO_ENTIDADE)
             )
-            rows = (await self._session.execute(stmt)).fetchall()
+            rows = (await self._execute(stmt)).fetchall()
             for co_entidade, subprojetos, bolsistas in rows:
                 resultado[co_entidade] = {
                     "subprojetos": subprojetos,

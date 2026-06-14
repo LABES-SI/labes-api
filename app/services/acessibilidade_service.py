@@ -1,7 +1,9 @@
+import asyncio
 import json
 import random
 
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 
 from app.domain.acessibilidade import (
@@ -14,6 +16,7 @@ from app.domain.acessibilidade import (
     AcessibilidadeTemporalDependencia,
 )
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
+from app.services.chart_factory import ChartFactory
 
 
 METRIC_FIELDS: list[tuple[str, str]] = [
@@ -62,9 +65,6 @@ METRIC_ESCOLA_FIELDS: list[tuple[str, str, str, str]] = [
 ]
 COR_AUSENTE = "#E5E5E5"
 
-REDES_ENSINO: list[str] = ["Federal", "Estadual", "Municipal", "Privada"]
-TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
-
 PAINEL_DESCRICAO = "painel_acessibilidade"
 MAPA_DESCRICAO = "mapa_acessibilidade"
 ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_acessibilidade"
@@ -82,9 +82,10 @@ class AcessibilidadeService:
     def __init__(self, repository: AcessibilidadeRepository):
         self._repository = repository
 
-    # ========================================================================
-    # PUBLIC API - Métodos principais chamados pelas rotas
-    # ========================================================================
+    @staticmethod
+    def _figure_to_plotly_dict(figure: go.Figure) -> dict:
+        """Converte figura Plotly para dict (data + layout) serializável em JSON."""
+        return json.loads(figure.to_json())
 
     async def build_painel(
         self,
@@ -105,56 +106,55 @@ class AcessibilidadeService:
         - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
           aos numerador e denominador).
         """
-        # Mantém a entrada crua para repassar ao gráfico paginado por escola
-        # (build_painel_escolas resolve por conta própria).
-        variaveis_filtro = variaveis
         variaveis, combine_or = self._resolver_variaveis(variaveis)
 
-        records = await self._repository.find_media_por_municipio(
-            variaveis=variaveis,
-            combine_or=combine_or,
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
+        # Paralelizar queries independentes com asyncio.gather()
+        (
+            records,
+            total_escolas_com_acessibilidade_record,
+            total_escolas_geral_record,
+            dep_records,
+            loc_records,
+        ) = await asyncio.gather(
+            self._repository.find_media_por_municipio(
+                variaveis=variaveis,
+                combine_or=combine_or,
+                ano=ano,
+                municipios=municipios,
+                rede_ensino=rede_ensino,
+                tp_localizacao=tp_localizacao,
+            ),
+            self._repository.find_total_escolas(
+                variaveis=variaveis,
+                combine_or=combine_or,
+                ano=ano,
+                municipios=municipios,
+                rede_ensino=rede_ensino,
+                tp_localizacao=tp_localizacao,
+            ),
+            self._repository.find_total_escolas_geral(
+                ano=ano,
+                municipios=municipios,
+                rede_ensino=rede_ensino,
+                tp_localizacao=tp_localizacao,
+            ),
+            self._repository.find_media_por_dependencia(
+                variaveis=variaveis,
+                combine_or=combine_or,
+                ano=ano,
+                municipios=municipios,
+                rede_ensino=rede_ensino,
+                tp_localizacao=tp_localizacao,
+            ),
+            self._repository.find_media_por_localizacao(
+                variaveis=variaveis,
+                combine_or=combine_or,
+                ano=ano,
+                municipios=municipios,
+                rede_ensino=rede_ensino,
+                tp_localizacao=tp_localizacao,
+            ),
         )
-
-        total_escolas_com_acessibilidade_record = await self._repository.find_total_escolas(
-            variaveis=variaveis,
-            combine_or=combine_or,
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
-
-        total_escolas_geral_record = await self._repository.find_total_escolas_geral(
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
-
-        dep_records = await self._repository.find_media_por_dependencia(
-            variaveis=variaveis,
-            combine_or=combine_or,
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
-
-        loc_records = await self._repository.find_media_por_localizacao(
-            variaveis=variaveis,
-            combine_or=combine_or,
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
-
-        municipios_disponiveis = await self._repository.find_municipios_disponiveis()
-        anos_disponiveis = await self._repository.find_anos_disponiveis()
 
         tab_percent = self._build_tab_percent(records, ano, variaveis, combine_or)
 
@@ -175,15 +175,6 @@ class AcessibilidadeService:
         grafico_tp_localizacao = self._build_localizacao_chart(
             loc_records, variaveis, combine_or, ano,
         )
-        painel_escolas = await self.build_painel_escolas(
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-            variaveis=variaveis_filtro,
-            page=0,
-            page_size=PAINEL_ESCOLAS_PAGE_SIZE,
-        )
 
         return {
             "descricao": PAINEL_DESCRICAO,
@@ -194,21 +185,6 @@ class AcessibilidadeService:
                     "tab_percent_acessibilidade": tab_percent,
                     "grafico_dependencia_acessibilidade": grafico_dependencia,
                     "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
-                    "grafico_metricas_por_escola_acessibilidade": painel_escolas["grafico"],
-                },
-                "paginacao_escolas": painel_escolas["paginacao"],
-                "dados_filtros": {
-                    "municipios": [
-                        {"codigo": codigo, "nome": nome}
-                        for codigo, nome in municipios_disponiveis
-                    ],
-                    "anos": anos_disponiveis,
-                    "metricas": [
-                        {"chave": chave, "label": label}
-                        for chave, label in METRIC_FIELDS
-                    ],
-                    "rede_ensino": REDES_ENSINO,
-                    "tp_localizacao": TIPOS_LOCALIZACAO,
                 },
             },
         }
@@ -282,7 +258,7 @@ class AcessibilidadeService:
             "grafico": {
                 "tipo": "bar",
                 "titulo": titulo,
-                "plotly": json.loads(figure.to_json()),
+                "plotly": self._figure_to_plotly_dict(figure),
             },
             "paginacao": {
                 "page": page,
@@ -346,12 +322,6 @@ class AcessibilidadeService:
                 "graficos": {
                     "evolucao_temporal_por_localizacao": grafico,
                     "evolucao_temporal_por_dependencia": grafico_dependencia,
-                },
-                "dados_filtros": {
-                    "metricas": [
-                        {"chave": chave, "label": label}
-                        for chave, label in METRIC_FIELDS
-                    ],
                 },
             },
         }
@@ -439,7 +409,7 @@ class AcessibilidadeService:
         return {
             "tipo": "bar",
             "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
+            "plotly": self._figure_to_plotly_dict(figure),
         }
 
     def _build_evolucao_temporal(
@@ -456,7 +426,7 @@ class AcessibilidadeService:
         return {
             "tipo": "line",
             "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
+            "plotly": self._figure_to_plotly_dict(figure),
         }
 
     # ========================================================================
@@ -493,69 +463,61 @@ class AcessibilidadeService:
 
     @staticmethod
     def _build_tab_percent_figure(
-        df: pd.DataFrame,
-        metrica: str,
-        titulo: str,
+       df: pd.DataFrame,
+       metrica: str,
+       titulo: str,
     ) -> go.Figure:
-        fig = go.Figure()
-        if not df.empty:
-            values = df[metrica].tolist()
-            municipios = df["municipio"].tolist()
-            text_labels = [f"{v:.1f}%".replace(".", ",") for v in values]
-            totais = df["total_escolas"].tolist()
-            fig.add_trace(
-                go.Bar(
-                    x=values,
-                    y=municipios,
-                    orientation="h",
-                    text=text_labels,
-                    customdata=totais,
-                    texttemplate="%{text}<br>%{customdata} escolas",
-                    textposition="inside",
-                    insidetextanchor="end",
-                )
-            )
+       if df.empty:
+           return ChartFactory.bar_chart_horizontal([], [], titulo)
+        
+       values = df[metrica].tolist()
+       municipios = df["municipio"].tolist()
+       totais = df["total_escolas"].tolist()
+        
+       fig = ChartFactory.bar_chart_horizontal(
+           y_data=municipios,
+           x_data=values,
+           titulo=titulo,
+           customdata=totais,
+           x_axis_range=(0, 100),
+       )
+        
+       n_rows = len(df)
+       figure_height = TAB_PERCENT_HEADER_PX + TAB_PERCENT_ROW_HEIGHT_PX * max(
+           n_rows, 1
+       )
+       # Customizações específicas para este gráfico
+       fig.update_layout(
+           yaxis=dict(title="Lista de municípios"),
+           margin=dict(l=160, r=40, t=60, b=40),
+           height=figure_height,
+       )
+       return fig
 
-        n_rows = len(df)
-        figure_height = TAB_PERCENT_HEADER_PX + TAB_PERCENT_ROW_HEIGHT_PX * max(
-            n_rows, 1
-        )
-        fig.update_layout(
-            title=titulo,
-            xaxis=dict(range=[0, 100], ticksuffix="%"),
-            # autorange="reversed" coloca o primeiro item (maior valor após o
-            # sort DESC) no topo do eixo Y.
-            yaxis=dict(autorange="reversed", title="Lista de municípios"),
-            showlegend=False,
-            margin=dict(l=160, r=40, t=60, b=40),
-            height=figure_height,
-        )
-        return fig
-
+    @staticmethod
     @staticmethod
     def _build_evolucao_temporal_figure(
         df: pd.DataFrame,
         titulo: str,
     ) -> go.Figure:
-        fig = go.Figure()
-        if not df.empty:
-            for localizacao in df["localizacao"].unique():
-                df_loc = df[df["localizacao"] == localizacao]
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_loc["ano"].tolist(),
-                        y=df_loc["percentual"].tolist(),
-                        mode="lines+markers",
-                        name=localizacao,
-                    )
-                )
-        fig.update_layout(
-            title=titulo,
-            xaxis=dict(title="Ano", dtick=1),
-            yaxis=dict(title="Percentual de acessibilidade", ticksuffix="%"),
-            template="plotly_white",
+        if df.empty:
+            return ChartFactory.line_chart([], {}, titulo)
+        
+        # Agrupa dados por localização para criar série temporal
+        y_data_series = {}
+        for localizacao in df["localizacao"].unique():
+            df_loc = df[df["localizacao"] == localizacao]
+            y_data_series[localizacao] = df_loc["percentual"].tolist()
+        
+        x_data = df["ano"].unique().tolist()
+        x_data.sort()
+        
+        return ChartFactory.line_chart(
+            x_data=x_data,
+            y_data_series=y_data_series,
+            titulo=titulo,
+            y_axis_title="Percentual de acessibilidade",
         )
-        return fig
     
     def _build_total_escolas_card(
         self,
@@ -568,21 +530,17 @@ class AcessibilidadeService:
         return{
             "tipo": "indicator",
             "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
+            "plotly": self._figure_to_plotly_dict(figure),
         }
 
     @staticmethod
     def _build_total_escolas_figure(total: int, titulo: str = "Total de Escolas") -> go.Figure:
         """Constrói o componente de KPI (Indicator) idêntico ao protótipo do notebook"""
-        fig = go.Figure(
-            go.Indicator(
-                mode="number",
-                value=total,
-                title={"text": titulo},
-                number={"font": {"size": 60}}
-            )
+        return ChartFactory.indicator_card(
+            value=total,
+            titulo=titulo,
+            font_size=60,
         )
-        return fig
     
     def _build_dependencia_chart(
         self,
@@ -610,7 +568,7 @@ class AcessibilidadeService:
         return {
             "tipo": "bar",
             "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
+            "plotly": self._figure_to_plotly_dict(figure),
         }
 
     @staticmethod
@@ -621,28 +579,13 @@ class AcessibilidadeService:
         titulo: str,
     ) -> go.Figure:
         """Gera o objeto gráfico do Plotly para barras verticais."""
-        import plotly.express as px
-        
-        fig = go.Figure()
-        fig.add_trace(
-            go.Bar(
-                x=x_data,
-                y=y_data,
-                text=y_data,
-                customdata=totais_escolas,
-                texttemplate="%{text:.2f}%<br>%{customdata} escolas",
-                textposition="auto",
-                marker_color=px.colors.sequential.Blues_r  # Paleta Blues_r
-            )
+        return ChartFactory.bar_chart_vertical(
+            x_data=x_data,
+            y_data=y_data,
+            titulo=titulo,
+            customdata=totais_escolas,
+            color_palette="Blues_r",
         )
-        fig.update_layout(
-            title=titulo,
-            yaxis_title="Percentual de Escolas",
-            xaxis_title="",
-            showlegend=False,
-            template="plotly_white"
-        )
-        return fig
 
     def _build_localizacao_chart(
         self,
@@ -670,7 +613,7 @@ class AcessibilidadeService:
         return {
             "tipo": "bar",
             "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
+            "plotly": self._figure_to_plotly_dict(figure),
         }
 
     @staticmethod
@@ -681,28 +624,13 @@ class AcessibilidadeService:
         titulo: str,
     ) -> go.Figure:
         """Gera o objeto gráfico do Plotly para barras verticais."""
-        import plotly.express as px
-
-        fig = go.Figure()
-        fig.add_trace(
-            go.Bar(
-                x=x_data,
-                y=y_data,
-                text=y_data,
-                customdata=totais_escolas,
-                texttemplate="%{text:.2f}%<br>%{customdata} escolas",
-                textposition="auto",
-                marker_color=px.colors.sequential.Blues_r,
-            )
+        return ChartFactory.bar_chart_vertical(
+            x_data=x_data,
+            y_data=y_data,
+            titulo=titulo,
+            customdata=totais_escolas,
+            color_palette="Blues_r",
         )
-        fig.update_layout(
-            title=titulo,
-            yaxis_title="Percentual de Escolas",
-            xaxis_title="",
-            showlegend=False,
-            template="plotly_white",
-        )
-        return fig
 
     @staticmethod
     def _build_metricas_por_escola_figure(
@@ -722,9 +650,12 @@ class AcessibilidadeService:
         n = len(records)
         n_metricas = len(METRIC_ESCOLA_FIELDS)
 
-        def _ideb_texto(co: int) -> str:
-            notas = ideb_map.get(co, {})
-            partes = [
+        # Pré-processar dados de IDEB, PIBID para evitar lookups repetidos
+        cached_data = []
+        for r in records:
+            # IDEB
+            notas = ideb_map.get(r.co_entidade, {})
+            ideb_partes = [
                 f"{rotulo}: {notas[chave]:.1f}"
                 for chave, rotulo in (
                     ("iniciais", "Anos Iniciais"),
@@ -733,39 +664,47 @@ class AcessibilidadeService:
                 )
                 if notas.get(chave) is not None
             ]
-            return "<br>".join(partes) if partes else "sem registro"
-
-        def _pibid_subprojeto(co: int) -> str:
-            sub = pibid_map.get(co, {}).get("subprojetos")
-            return sub if sub else "Sem registro"
-
-        def _pibid_bolsistas(co: int) -> object:
-            bolsistas = pibid_map.get(co, {}).get("bolsistas")
-            return bolsistas if bolsistas is not None else "—"
+            ideb_texto = "<br>".join(ideb_partes) if ideb_partes else "sem registro"
+            
+            # PIBID
+            pibid_data = pibid_map.get(r.co_entidade, {})
+            subprojeto = pibid_data.get("subprojetos", "Sem registro")
+            bolsistas = pibid_data.get("bolsistas", "—")
+            
+            cached_data.append({
+                "nu_ano_censo": r.nu_ano_censo,
+                "subprojeto": subprojeto,
+                "bolsistas": bolsistas,
+                "ideb_texto": ideb_texto,
+            })
 
         # Uma barra empilhada por métrica (slot fixo de largura 1).
         for chave, rotulo, cor, _grupo in METRIC_ESCOLA_FIELDS:
-            possui = [r.metricas.get(chave, 0) == 1 for r in records]
+            colors = []
+            customdata_list = []
+            for i, r in enumerate(records):
+                possui = r.metricas.get(chave, 0) == 1
+                colors.append(cor if possui else COR_AUSENTE)
+                cached = cached_data[i]
+                customdata_list.append([
+                    rotulo,
+                    "Possui" if possui else "Não possui",
+                    cached["nu_ano_censo"],
+                    cached["subprojeto"],
+                    cached["bolsistas"],
+                    cached["ideb_texto"],
+                ])
+            
             fig.add_trace(
                 go.Bar(
                     y=escolas,
                     x=[1] * n,
                     orientation="h",
                     marker=dict(
-                        color=[cor if p else COR_AUSENTE for p in possui],
+                        color=colors,
                         line=dict(color="white", width=2),
                     ),
-                    customdata=[
-                        [
-                            rotulo,
-                            "Possui" if p else "Não possui",
-                            r.nu_ano_censo,
-                            _pibid_subprojeto(r.co_entidade),
-                            _pibid_bolsistas(r.co_entidade),
-                            _ideb_texto(r.co_entidade),
-                        ]
-                        for r, p in zip(records, possui)
-                    ],
+                    customdata=customdata_list,
                     hovertemplate=(
                         "<b>%{y}</b> (censo %{customdata[2]})<br>"
                         "%{customdata[0]}: %{customdata[1]}<br>"
@@ -799,9 +738,9 @@ class AcessibilidadeService:
             )
             grupos_vistos.add(grupo)
 
-        # Contagem n/17 ao final de cada barra.
-        for r in records:
-            fig.add_annotation(
+        # Batch annotations (em vez de uma por uma)
+        annotations = [
+            dict(
                 x=n_metricas + 0.2,
                 y=r.no_entidade,
                 text=f"{int(r.score)}/{n_metricas}",
@@ -809,6 +748,9 @@ class AcessibilidadeService:
                 xanchor="left",
                 font=dict(size=11, color="#444"),
             )
+            for r in records
+        ]
+        fig.update_layout(annotations=annotations)
 
         fig.update_layout(
             barmode="stack",
@@ -852,7 +794,7 @@ class AcessibilidadeService:
         return {
             "tipo": "line",
             "titulo": titulo,
-            "plotly": json.loads(figure.to_json()),
+            "plotly": self._figure_to_plotly_dict(figure),
         }
 
     @staticmethod
@@ -860,25 +802,24 @@ class AcessibilidadeService:
         df: pd.DataFrame,
         titulo: str,
     ) -> go.Figure:
-        fig = go.Figure()
-        if not df.empty:
-            for dependencia in df["dependencia"].unique():
-                df_dep = df[df["dependencia"] == dependencia]
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_dep["ano"].tolist(),
-                        y=df_dep["percentual"].tolist(),
-                        mode="lines+markers",
-                        name=dependencia,
-                    )
-                )
-        fig.update_layout(
-            title=titulo,
-            xaxis=dict(title="Ano", dtick=1),
-            yaxis=dict(title="Percentual de Acessibilidade", ticksuffix="%"),
-            template="plotly_white",
+        if df.empty:
+            return ChartFactory.line_chart([], {}, titulo)
+        
+        # Agrupa dados por dependência para criar série temporal
+        y_data_series = {}
+        for dependencia in df["dependencia"].unique():
+            df_dep = df[df["dependencia"] == dependencia]
+            y_data_series[dependencia] = df_dep["percentual"].tolist()
+        
+        x_data = df["ano"].unique().tolist()
+        x_data.sort()
+        
+        return ChartFactory.line_chart(
+            x_data=x_data,
+            y_data_series=y_data_series,
+            titulo=titulo,
+            y_axis_title="Percentual de Acessibilidade",
         )
-        return fig
 
     # ========================================================================
     # AUXILIARY METHODS - Métodos auxiliares (mocks, etc)
@@ -976,5 +917,5 @@ class AcessibilidadeService:
         return {
             "tipo": "scatter",
             "titulo": "Cruzamento Acessibilidade vs IDEB",
-            "plotly": json.loads(fig.to_json())
+            "plotly": self._figure_to_plotly_dict(fig)
         }

@@ -53,7 +53,7 @@ async def _build_painel(
     tp_localizacao: list[str] | None = None,
 ) -> dict:
     async with SessionLocal() as session:
-        repository = AcessibilidadeRepository(session)
+        repository = AcessibilidadeRepository(SessionLocal, semaphore=None)
         service = AcessibilidadeService(repository)
         return await service.build_painel(
             ano=ano,

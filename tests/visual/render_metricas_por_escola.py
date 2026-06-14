@@ -61,7 +61,7 @@ async def _build_pagina(
     page_size: int = 5,
 ) -> dict:
     async with SessionLocal() as session:
-        repository = AcessibilidadeRepository(session)
+        repository = AcessibilidadeRepository(SessionLocal, semaphore=None)
         service = AcessibilidadeService(repository)
         return await service.build_painel_escolas(
             ano=ano,

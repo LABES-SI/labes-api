@@ -47,7 +47,7 @@ def _write_html(painel: dict, out_file: Path) -> int:
 async def _run() -> None:
     try:
         async with SessionLocal() as session:
-            repository = AcessibilidadeRepository(session)
+            repository = AcessibilidadeRepository(SessionLocal, semaphore=None)
             service = AcessibilidadeService(repository)
 
             municipios = await repository.find_municipios_disponiveis()

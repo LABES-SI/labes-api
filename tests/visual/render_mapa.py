@@ -117,7 +117,7 @@ COLUNAS_ORDENADAS = [
 
 async def _df_pipeline(ano: int | None) -> pd.DataFrame:
     async with SessionLocal() as session:
-        repo = AcessibilidadeRepository(session)
+        repo = AcessibilidadeRepository(SessionLocal, semaphore=None)
         pontos = await repo.find_pontos_mapa(
             ano=ano,
             municipios=None,
