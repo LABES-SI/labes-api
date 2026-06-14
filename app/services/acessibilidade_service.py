@@ -87,8 +87,8 @@ class AcessibilidadeService:
 
     @staticmethod
     def _figure_to_plotly_dict(figure: go.Figure) -> dict:
-        """Converte figura Plotly para dict, otimizado para evitar overhead."""
-        return self._figure_to_plotly_dict(figure)
+        """Converte figura Plotly para dict (data + layout) serializável em JSON."""
+        return json.loads(figure.to_json())
 
     async def build_painel(
         self,
