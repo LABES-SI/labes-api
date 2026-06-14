@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_filtros_service
 from app.schemas.filtros import FiltrosResponse
-from app.services.filtros_service import FiltrosService
+from app.services.filtros_service import FiltrosService, PainelDisponivel
 
 router = APIRouter(prefix="/filtros", tags=["filtros"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/filtros", tags=["filtros"])
     summary="Filtros aplicáveis (genérico, compartilhável entre painéis)",
 )
 async def get_filtros(
-    painel: str | None = Query(
+    painel: PainelDisponivel | None = Query(
         None,
         description=(
             "Painel para incluir o catálogo de métricas (ex: acessibilidade). "
@@ -26,5 +26,5 @@ async def get_filtros(
     e tipo de localização) para popular dropdowns do frontend. Buscado uma única
     vez e reaproveitado por todos os painéis. Com `?painel=<nome>`, anexa as
     métricas específicas daquele painel."""
-    envelope = await service.build_filtros(painel=painel)
+    envelope = await service.build_filtros(painel=painel.value if painel else None)
     return FiltrosResponse(**envelope)

@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 
 from app.core.exceptions import NotFoundError
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
@@ -14,6 +15,15 @@ TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
 PAINEL_METRICAS: dict[str, list[tuple[str, str]]] = {
     "acessibilidade": METRIC_FIELDS,
 }
+
+# Enum derivado do registry para que o parâmetro ?painel vire um dropdown no
+# Swagger (e seja validado com 422) em vez de texto livre. Registrar um novo
+# painel em PAINEL_METRICAS o adiciona automaticamente às opções disponíveis.
+PainelDisponivel = Enum(
+    "PainelDisponivel",
+    {nome: nome for nome in PAINEL_METRICAS},
+    type=str,
+)
 
 FILTROS_DESCRICAO = "filtros_aplicaveis"
 
