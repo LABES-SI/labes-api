@@ -14,7 +14,29 @@ from app.services.acessibilidade_service import AcessibilidadeService
 router = APIRouter(prefix="/acessibilidade", tags=["acessibilidade"])
 
 
+# Variáveis dos painéis (gold) — as 15 métricas do notebook. Usadas em /painel,
+# /painel/escolas e /analise-temporal.
 VariavelAcessibilidade = Literal[
+    "in_acessibilidade_rampas",
+    "in_acessibilidade_corrimao",
+    "in_acessibilidade_elevador",
+    "in_acessibilidade_pisos_tateis",
+    "in_acessibilidade_vao_livre",
+    "qt_salas_utilizadas_acessiveis",
+    "in_acessibilidade_inexistente",
+    "in_acessibilidade_sinal_tatil",
+    "in_acessibilidade_sinal_sonoro",
+    "in_acessibilidade_sinal_visual",
+    "tp_aee",
+    "in_sala_atendimento_especial",
+    "in_reserva_pcd",
+    "qt_prof_psicologo",
+    "qt_prof_assist_social",
+]
+
+# Variáveis do mapa (silver) — o mapa preserva o conjunto silver porque seu
+# score/classificação depende de colunas que não existem no gold. Usado só em /mapa.
+VariavelAcessibilidadeMapa = Literal[
     "in_banheiro_pne",
     "in_sala_atendimento_especial",
     "in_acessibilidade_rampas",
@@ -149,11 +171,12 @@ async def get_mapa_acessibilidade(
         None,
         description="Filtra por nome de município (parâmetro repetido).",
     ),
-    variaveis: list[VariavelAcessibilidade] | None = Query(
+    variaveis: list[VariavelAcessibilidadeMapa] | None = Query(
         None,
         description=(
             "Filtro AND: a escola precisa ter TODAS as variáveis marcadas = 1. "
-            "Use o parâmetro repetido: "
+            "Conjunto silver (inclui in_banheiro_pne, in_acessibilidade_sinalizacao "
+            "e os in_prof_*). Use o parâmetro repetido: "
             "?variaveis=in_acessibilidade_rampas&variaveis=in_acessibilidade_elevador."
         ),
     ),

@@ -18,60 +18,63 @@ from app.domain.acessibilidade import (
     AcessibilidadeTemporalDependencia,
 )
 from app.models.acessibilidade import (
-    base_pibid,
+    # gold — painéis
     dim_entidade,
     dim_municipio,
     dim_tp_dependencia,
     dim_tp_localizacao,
-    ideb_anos_finais_escolas,
-    ideb_anos_iniciais_escolas,
-    ideb_ensino_medio_escolas,
     fato_acessibilidade,
+    fato_ideb_anos_finais_esc,
+    fato_ideb_anos_iniciais_esc,
+    fato_ideb_ensino_medio_esc,
+    fato_pibid,
+    # silver — apenas o mapa
+    dim_entidade_silver,
+    dim_municipio_silver,
+    dim_tp_dependencia_silver,
+    dim_tp_localizacao_silver,
+    fato_acessibilidade_silver,
 )
 
 
-# Whitelist única de variáveis indicadoras que podem vir como filtro no
-# endpoint /mapa. É a fonte de verdade consumida pelo Literal da rota e pelo
-# filtro AND no repository — protege contra string crua do usuário virar
-# coluna SQL.
-VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = {
-    col.name: col for col in fato_acessibilidade.c if col.name.startswith("in_")
-}
-
-
+# Conjunto único das 15 métricas do notebook (cell-10), na mesma ordem. Fonte de
+# verdade dos painéis: predicado de filtro, subquery por escola/score, validação
+# da análise temporal e `_row_to_escola`. Colunas qt_*/tp_aee são tratadas como
+# binário (> 0 = possui) onde entram em contagem/score.
 METRIC_TO_FATO_COLUMN = {
-    "in_banheiro_pne": fato_acessibilidade.c.in_banheiro_pne,
-    "in_sala_atendimento_especial": fato_acessibilidade.c.in_sala_atendimento_especial,
     "in_acessibilidade_rampas": fato_acessibilidade.c.in_acessibilidade_rampas,
     "in_acessibilidade_corrimao": fato_acessibilidade.c.in_acessibilidade_corrimao,
     "in_acessibilidade_elevador": fato_acessibilidade.c.in_acessibilidade_elevador,
     "in_acessibilidade_pisos_tateis": fato_acessibilidade.c.in_acessibilidade_pisos_tateis,
     "in_acessibilidade_vao_livre": fato_acessibilidade.c.in_acessibilidade_vao_livre,
+    "qt_salas_utilizadas_acessiveis": fato_acessibilidade.c.qt_salas_utilizadas_acessiveis,
     "in_acessibilidade_inexistente": fato_acessibilidade.c.in_acessibilidade_inexistente,
     "in_acessibilidade_sinal_tatil": fato_acessibilidade.c.in_acessibilidade_sinal_tatil,
     "in_acessibilidade_sinal_sonoro": fato_acessibilidade.c.in_acessibilidade_sinal_sonoro,
     "in_acessibilidade_sinal_visual": fato_acessibilidade.c.in_acessibilidade_sinal_visual,
-    "in_acessibilidade_sinalizacao": fato_acessibilidade.c.in_acessibilidade_sinalizacao,
-    "in_prof_psicologo": fato_acessibilidade.c.in_prof_psicologo,
-    "in_prof_trad_libras": fato_acessibilidade.c.in_prof_trad_libras,
-    "in_prof_revisor_braille": fato_acessibilidade.c.in_prof_revisor_braille,
-    "in_prof_assist_social": fato_acessibilidade.c.in_prof_assist_social,
-    "in_prof_fonaudiologo": fato_acessibilidade.c.in_prof_fonaudiologo,
+    "tp_aee": fato_acessibilidade.c.tp_aee,
+    "in_sala_atendimento_especial": fato_acessibilidade.c.in_sala_atendimento_especial,
+    "in_reserva_pcd": fato_acessibilidade.c.in_reserva_pcd,
+    "qt_prof_psicologo": fato_acessibilidade.c.qt_prof_psicologo,
+    "qt_prof_assist_social": fato_acessibilidade.c.qt_prof_assist_social,
 }
 
 
-IDEB_YEAR_COLUMNS = {
-    2005: "ideb_2005",
-    2007: "ideb_2007",
-    2009: "ideb_2009",
-    2011: "ideb_2011",
-    2013: "ideb_2013",
-    2015: "ideb_2015",
-    2017: "ideb_2017",
-    2019: "ideb_2019",
-    2021: "ideb_2021",
-    2023: "ideb_2023",
+# Whitelist de variáveis dos painéis (gold). Consumida pelo Literal da rota e pelo
+# filtro do repository — protege contra string crua do usuário virar coluna SQL.
+VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = dict(METRIC_TO_FATO_COLUMN)
+
+
+# Whitelist do mapa: colunas indicadoras (in_) do fato silver. O mapa preserva o
+# conjunto silver porque seu score/classificação depende dessas colunas.
+VARIAVEIS_ACESSIBILIDADE_MAPA: dict[str, "object"] = {
+    col.name: col for col in fato_acessibilidade_silver.c if col.name.startswith("in_")
 }
+
+
+# Ano fixo da nota do IDEB exposta no hover do gráfico por escola — espelha
+# ANO_IDEB=2023 do notebook (cell-10). Lido diretamente de uma coluna por etapa.
+IDEB_YEAR_COLUMN = "ideb_2023"
 
 
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
@@ -133,7 +136,8 @@ def _row_to_localizacao(row) -> AcessibilidadeLocalizacao:
 
 
 def _row_to_escola(row) -> AcessibilidadeEscola:
-    metricas = {chave: int(row[chave] or 0) for chave in METRIC_TO_FATO_COLUMN}
+    # Binário uniforme: qt_*/tp_aee podem vir > 1, normaliza para 0/1 (possui).
+    metricas = {chave: int((row[chave] or 0) > 0) for chave in METRIC_TO_FATO_COLUMN}
     return AcessibilidadeEscola(
         co_entidade=int(row["co_entidade"]),
         no_entidade=row["no_entidade"],
@@ -170,35 +174,18 @@ def _build_metric_predicate(variaveis: list[str], combine_or: bool):
             )
         cols.append(col)
     combinator = or_ if combine_or else and_
-    return combinator(*[c == 1 for c in cols])
-
-
-def _build_ideb_expr(ano_expr):
-    ideb_iniciais = ideb_anos_iniciais_escolas.c
-    ideb_finais = ideb_anos_finais_escolas.c
-
-    return case(
-        *[
-            (
-                ano_expr == ano,
-                func.coalesce(
-                    getattr(ideb_iniciais, column_name),
-                    getattr(ideb_finais, column_name),
-                ),
-            )
-            for ano, column_name in IDEB_YEAR_COLUMNS.items()
-        ],
-        else_=literal(None),
-    )
+    # Binário uniforme (> 0): colunas in_ 0/1 seguem equivalentes; qt_*/tp_aee
+    # contam como "possui" quando > 0.
+    return combinator(*[c > 0 for c in cols])
 
 
 class AcessibilidadeRepository:
     """
-    Acessa o domínio de acessibilidade no warehouse silver.
+    Acessa o domínio de acessibilidade no warehouse.
 
-    Tabela fato: silver.fato_acessibilidade (uma linha por escola por
-    ano censo) + dimensões (entidade, município, tp_dependência,
-    tp_localização). Owner do mart: squad de dados.
+    Painéis: gold.fato_acessibilidade (uma linha por escola por ano censo) +
+    dimensões gold. Mapa: silver.fato_acessibilidade + dimensões silver (score/
+    classificação dependem de colunas só-silver). Owner do mart: squad de dados.
     """
 
     def __init__(
@@ -376,12 +363,15 @@ class AcessibilidadeRepository:
         """Monta o SELECT do mapa de acessibilidade (joins + score +
         classificação + filtros). Helper compartilhado por
         `find_pontos_mapa` (dataclass path, usado pelos testes visuais) e
-        `find_pontos_mapa_raw` (dict path, usado pela rota HTTP)."""
-        f = fato_acessibilidade.c
-        e = dim_entidade.c
-        m = dim_municipio.c
-        d = dim_tp_dependencia.c
-        l = dim_tp_localizacao.c
+        `find_pontos_mapa_raw` (dict path, usado pela rota HTTP).
+
+        Permanece em silver: score/classificação dependem de in_banheiro_pne e
+        in_acessibilidade_sinalizacao, que não existem no fato gold."""
+        f = fato_acessibilidade_silver.c
+        e = dim_entidade_silver.c
+        m = dim_municipio_silver.c
+        d = dim_tp_dependencia_silver.c
+        l = dim_tp_localizacao_silver.c
 
         def coalesce0(col):
             return func.coalesce(col, 0)
@@ -412,11 +402,11 @@ class AcessibilidadeRepository:
         )
 
         join_tree = (
-            fato_acessibilidade
-            .join(dim_entidade, f.co_entidade == e.co_entidade)
-            .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
-            .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
-            .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
+            fato_acessibilidade_silver
+            .join(dim_entidade_silver, f.co_entidade == e.co_entidade)
+            .outerjoin(dim_municipio_silver, e.co_municipio == m.co_municipio)
+            .outerjoin(dim_tp_dependencia_silver, e.tp_dependencia == d.co_tp_dependencia)
+            .outerjoin(dim_tp_localizacao_silver, e.tp_localizacao == l.co_tp_localizacao)
         )
 
         stmt = (
@@ -446,7 +436,7 @@ class AcessibilidadeRepository:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
         if variaveis:
             for nome in variaveis:
-                col = VARIAVEIS_ACESSIBILIDADE.get(nome)
+                col = VARIAVEIS_ACESSIBILIDADE_MAPA.get(nome)
                 if col is None:
                     raise ValueError(f"Variável inválida: {nome!r}")
                 stmt = stmt.where(col == 1)
@@ -540,7 +530,7 @@ class AcessibilidadeRepository:
 
         percentual = func.round(
             (
-                func.count(case((col == 1, 1)))
+                func.count(case((col > 0, 1)))
                 * 100.0
                 / func.nullif(func.count(f.co_entidade), 0)
             ).cast(Numeric),
@@ -851,10 +841,10 @@ class AcessibilidadeRepository:
         tp_localizacao: list[str] | None,
     ):
         """Subquery base do gráfico de métricas por escola: uma linha por
-        (escola, censo) com as 17 métricas, o score e o `rn` (row_number por
-        escola, censo DESC) para dedup do censo mais recente. Compartilhada por
-        `find_metricas_por_escola` (lista paginada) e `count_metricas_por_escola`
-        (total para a paginação)."""
+        (escola, censo) com as 15 métricas (binarizadas em 0/1), o score (0–15) e
+        o `rn` (row_number por escola, censo DESC) para dedup do censo mais
+        recente. Compartilhada por `find_metricas_por_escola` (lista paginada) e
+        `count_metricas_por_escola` (total para a paginação)."""
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
         metric_predicate = _build_metric_predicate(variaveis, combine_or)
@@ -865,12 +855,16 @@ class AcessibilidadeRepository:
         d = dim_tp_dependencia.c
         l = dim_tp_localizacao.c
 
+        # Binário uniforme (qt_*/tp_aee viram 0/1 via > 0). Cada métrica conta 1 no
+        # score, mantendo o intervalo 0–15.
+        def binario(col):
+            return case((col > 0, 1), else_=0)
+
         metric_cols = [
-            func.coalesce(col, 0).label(chave)
-            for chave, col in METRIC_TO_FATO_COLUMN.items()
+            binario(col).label(chave) for chave, col in METRIC_TO_FATO_COLUMN.items()
         ]
         score_expr = sum(
-            (func.coalesce(col, 0) for col in METRIC_TO_FATO_COLUMN.values()),
+            (binario(col) for col in METRIC_TO_FATO_COLUMN.values()),
             literal(0),
         )
         # Dedup para o censo mais recente de cada escola: sem filtro de ano,
@@ -926,8 +920,8 @@ class AcessibilidadeRepository:
         offset: int | None = None,
     ) -> list[AcessibilidadeEscola]:
         """
-        Lista escolas com o valor (0/1) de cada uma das 17 métricas de
-        acessibilidade e o score (soma das 17), aplicando a mesma regra de
+        Lista escolas com o valor (0/1) de cada uma das 15 métricas de
+        acessibilidade e o score (soma das 15), aplicando a mesma regra de
         filtro dos demais gráficos do painel.
 
         - `combine_or=False`: escola entra se tiver TODAS as variáveis = 1 (AND).
@@ -1008,7 +1002,7 @@ class AcessibilidadeRepository:
 
         percentual = func.round(
             (
-                func.count(case((col == 1, 1)))
+                func.count(case((col > 0, 1)))
                 * 100.0
                 / func.nullif(func.count(f.co_entidade), 0)
             ).cast(Numeric),
@@ -1047,104 +1041,73 @@ class AcessibilidadeRepository:
 
     async def find_ideb_por_entidades(
         self,
-        entidades: list[tuple[int, int]],
+        entidades: list[int],
     ) -> dict[int, dict[str, float | None]]:
         """
         Retorna {co_entidade: {"iniciais": ..., "finais": ..., "medio": ...}}
-        para cada escola, buscando a nota IDEB do ano mais próximo disponível
-        em cada uma das três etapas (anos iniciais, anos finais e ensino médio).
+        para cada escola, lendo a coluna de ano fixo (`IDEB_YEAR_COLUMN`) em cada
+        uma das três etapas do gold, igual ao notebook (cell-10, ANO_IDEB=2023).
         """
         if not entidades:
             return {}
 
-        ANOS_IDEB = [2005, 2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023]
-
-        def ano_ideb_mais_proximo(ano_censo: int) -> int | None:
-            candidatos = [a for a in ANOS_IDEB if a <= ano_censo]
-            return max(candidatos) if candidatos else None
-
-        from collections import defaultdict
-        por_ano: dict[int, list[int]] = defaultdict(list)
-
-        for co_entidade, nu_ano_censo in entidades:
-            ano_ideb = ano_ideb_mais_proximo(nu_ano_censo)
-            if ano_ideb is not None:
-                por_ano[ano_ideb].append(co_entidade)
-
-        # Estrutura separada por tabela
         resultado: dict[int, dict[str, float | None]] = {
-            co: {"iniciais": None, "finais": None, "medio": None}
-            for co, _ in entidades
+            co: {"iniciais": None, "finais": None, "medio": None} for co in entidades
         }
 
         tabelas = [
-            (ideb_anos_iniciais_escolas, "iniciais"),
-            (ideb_anos_finais_escolas,   "finais"),
-            (ideb_ensino_medio_escolas,  "medio"),
+            (fato_ideb_anos_iniciais_esc, "iniciais"),
+            (fato_ideb_anos_finais_esc,   "finais"),
+            (fato_ideb_ensino_medio_esc,  "medio"),
         ]
 
-        for ano_ideb, co_list in por_ano.items():
-            col_name = f"IDEB({ano_ideb})"
-
-            for table, chave in tabelas:
-                if col_name not in table.c:
-                    continue
-                col = table.c[col_name]
-                stmt = (
-                    select(table.c["CO_ENTIDADE"], col)
-                    .where(
-                        table.c["CO_ENTIDADE"].in_(co_list),
-                        col.is_not(None),
-                    )
-                )
-                rows = (await self._execute(stmt)).fetchall()
-                for co_entidade, nota in rows:
+        for table, chave in tabelas:
+            col = table.c[IDEB_YEAR_COLUMN]
+            stmt = (
+                select(table.c.co_entidade, col)
+                .where(table.c.co_entidade.in_(entidades), col.is_not(None))
+            )
+            rows = (await self._execute(stmt)).fetchall()
+            for co_entidade, nota in rows:
+                if co_entidade in resultado:
                     resultado[co_entidade][chave] = float(nota)
 
         return resultado
 
     async def find_pibid_por_entidades(
         self,
-        entidades: list[tuple[int, int]],
+        entidades: list[int],
     ) -> dict[int, dict[str, object]]:
         """
         Retorna {co_entidade: {"subprojetos": str|None, "bolsistas": int|None}}
-        para cada escola, lendo silver.base_pibid no mesmo ano do censo da escola.
-
-        Mesmo padrão de bucketing por ano de `find_ideb_por_entidades`: agrupa as
-        entidades por `nu_ano_censo` e, por ano, agrega os subprojetos
-        (STRING_AGG distinto) e o total de bolsistas ativos.
+        para cada escola, lendo gold.fato_pibid. A tabela gold não tem coluna de
+        ano: agrega por escola numa única query (STRING_AGG distinto dos
+        subprojetos + MAX de bolsistas ativos), igual ao notebook (cell-10).
         """
         if not entidades:
             return {}
 
-        from collections import defaultdict
-        por_ano: dict[int, list[int]] = defaultdict(list)
-        for co_entidade, nu_ano_censo in entidades:
-            por_ano[nu_ano_censo].append(co_entidade)
-
         resultado: dict[int, dict[str, object]] = {
-            co: {"subprojetos": None, "bolsistas": None} for co, _ in entidades
+            co: {"subprojetos": None, "bolsistas": None} for co in entidades
         }
 
-        p = base_pibid.c
-        for ano, co_list in por_ano.items():
-            stmt = (
-                select(
-                    p.CO_ENTIDADE,
-                    func.string_agg(p.SUBPROJETO.distinct(), literal(" / ")).label(
-                        "subprojetos"
-                    ),
-                    func.max(p.QTD_BOLSISTAS_ATIVOS).label("bolsistas"),
-                )
-                .where(p.ANO == ano, p.CO_ENTIDADE.in_(co_list))
-                .group_by(p.CO_ENTIDADE)
+        p = fato_pibid.c
+        stmt = (
+            select(
+                p.co_entidade,
+                func.string_agg(p.subprojeto.distinct(), literal(" / ")).label(
+                    "subprojetos"
+                ),
+                func.max(p.qtd_bolsistas_ativos).label("bolsistas"),
             )
-            rows = (await self._execute(stmt)).fetchall()
-            for co_entidade, subprojetos, bolsistas in rows:
-                resultado[co_entidade] = {
-                    "subprojetos": subprojetos,
-                    "bolsistas": int(bolsistas) if bolsistas is not None else None,
-                }
+            .where(p.co_entidade.in_(entidades))
+            .group_by(p.co_entidade)
+        )
+        rows = (await self._execute(stmt)).fetchall()
+        for co_entidade, subprojetos, bolsistas in rows:
+            resultado[co_entidade] = {
+                "subprojetos": subprojetos,
+                "bolsistas": int(bolsistas) if bolsistas is not None else None,
+            }
 
         return resultado
