@@ -8,8 +8,8 @@ class AcessibilidadeMunicipio:
     selecionada = 1, sobre o total de escolas do município no recorte
     (ano + filtros de rede/localização).
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
-    silver.dim_municipio. Valor de `percentual` em 0.0 - 100.0, com 2 casas.
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade +
+    gold.dim_municipio. Valor de `percentual` em 0.0 - 100.0, com 2 casas.
     """
 
     codigo_municipio: int
@@ -25,8 +25,8 @@ class AcessibilidadeTemporal:
     (ano censo, tipo de localização). Alimenta o gráfico de evolução temporal
     por tipo de localização (urbana/rural).
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
-    silver.dim_tp_localizacao.
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade +
+    gold.dim_tp_localizacao.
     """
 
     ano: int
@@ -65,7 +65,7 @@ class TotalEscolas:
     o recurso de acessibilidade física ativo (=1). Alimenta o card KPI de 
     destaque no topo do painel
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade.
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade.
     Granularidade: Um único valor numérico interiro
     """
 
@@ -79,7 +79,7 @@ class AcessibilidadeDependencia:
     de acessibilidade selecionada = 1, sobre o total de escolas daquela dependência 
     no recorte filtrado.
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade + silver.dim_tp_dependencia.
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade + gold.dim_tp_dependencia.
     """
 
     codigo_dependencia: int
@@ -95,8 +95,8 @@ class AcessibilidadeLocalizacao:
     de acessibilidade selecionada = 1, sobre o total de escolas daquela
     localização no recorte filtrado.
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
-    silver.dim_tp_localizacao.
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade +
+    gold.dim_tp_localizacao.
     """
 
     codigo_localizacao: int
@@ -108,11 +108,11 @@ class AcessibilidadeLocalizacao:
 @dataclass(frozen=True)
 class AcessibilidadeEscola:
     """
-    Uma escola com o valor (0/1) de cada uma das 17 métricas de
-    acessibilidade e o score (soma das 17). Quando o filtro de `ano` não é
+    Uma escola com o valor (0/1) de cada uma das 15 métricas de
+    acessibilidade e o score (soma das 15). Quando o filtro de `ano` não é
     informado, representa o censo mais recente disponível para a escola.
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade. Alimenta o
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade. Alimenta o
     gráfico de barras empilhadas "Métricas de acessibilidade por escola"
     do painel.
     """
@@ -132,8 +132,8 @@ class AcessibilidadeTemporalDependencia:
     gráfico de evolução temporal por dependência no endpoint
     /analise-temporal.
 
-    Fonte: silver.fato_acessibilidade + silver.dim_entidade +
-    silver.dim_tp_dependencia.
+    Fonte: gold.fato_acessibilidade + gold.dim_entidade +
+    gold.dim_tp_dependencia.
     """
 
     ano: int
