@@ -1,9 +1,7 @@
 import asyncio
 import json
-import random
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 
 from app.domain.acessibilidade import (
@@ -19,51 +17,36 @@ from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 from app.services.chart_factory import ChartFactory
 
 
+# (chave, rótulo, cor, grupo) — fonte única das 15 métricas do notebook (cell-10):
+# define ordem, cores e agrupamento da legenda (Infraestrutura × Profissionais) do
+# gráfico de métricas por escola. METRIC_FIELDS é derivado daqui para alimentar o
+# catálogo de filtros e a validação de variáveis.
+METRIC_ESCOLA_FIELDS: list[tuple[str, str, str, str]] = [
+    ("in_acessibilidade_rampas",        "Rampas",                       "#54A24B", "Infraestrutura"),
+    ("in_acessibilidade_corrimao",      "Corrimão",                     "#E45756", "Infraestrutura"),
+    ("in_acessibilidade_elevador",      "Elevador",                     "#72B7B2", "Infraestrutura"),
+    ("in_acessibilidade_pisos_tateis",  "Pisos táteis",                 "#EECA3B", "Infraestrutura"),
+    ("in_acessibilidade_vao_livre",     "Vão livre",                    "#B279A2", "Infraestrutura"),
+    ("qt_salas_utilizadas_acessiveis",  "Salas acessíveis",             "#FF9DA6", "Infraestrutura"),
+    ("in_acessibilidade_inexistente",   "Outros",                       "#444444", "Infraestrutura"),
+    ("in_acessibilidade_sinal_tatil",   "Sinal tátil",                  "#1F77B4", "Infraestrutura"),
+    ("in_acessibilidade_sinal_sonoro",  "Sinal sonoro",                 "#9D755D", "Infraestrutura"),
+    ("in_acessibilidade_sinal_visual",  "Sinal visual",                 "#FF9DA6", "Infraestrutura"),
+    ("tp_aee",                          "AEE",                          "#D67195", "Infraestrutura"),
+    ("in_sala_atendimento_especial",    "Sala de atendimento especial", "#4C78A8", "Infraestrutura"),
+    ("in_reserva_pcd",                  "Reserva PCD",                  "#F58518", "Infraestrutura"),
+    ("qt_prof_psicologo",               "Psicólogo",                    "#5254A3", "Profissionais"),
+    ("qt_prof_assist_social",           "Assistente social",            "#843C39", "Profissionais"),
+]
+COR_AUSENTE = "#E5E5E5"
+
+# Catálogo (chave, label) derivado de METRIC_ESCOLA_FIELDS — fonte única para o
+# catálogo de filtros (/filtros) e a validação de variáveis do painel.
 METRIC_FIELDS: list[tuple[str, str]] = [
-    ("in_banheiro_pne", "Banheiro PNE"),
-    ("in_sala_atendimento_especial", "Sala de Atendimento Especial"),
-    ("in_acessibilidade_rampas", "Rampas"),
-    ("in_acessibilidade_corrimao", "Corrimão"),
-    ("in_acessibilidade_elevador", "Elevador"),
-    ("in_acessibilidade_pisos_tateis", "Pisos Táteis"),
-    ("in_acessibilidade_vao_livre", "Vão Livre"),
-    ("in_acessibilidade_inexistente", "Outros"),
-    ("in_acessibilidade_sinal_tatil", "Sinalização Tátil"),
-    ("in_acessibilidade_sinal_sonoro", "Sinalização Sonora"),
-    ("in_acessibilidade_sinal_visual", "Sinalização Visual"),
-    ("in_acessibilidade_sinalizacao", "Sinalização Geral"),
-    ("in_prof_psicologo", "Psicólogo"),
-    ("in_prof_trad_libras", "Tradutor/Intérprete de Libras"),
-    ("in_prof_revisor_braille", "Revisor de Braille"),
-    ("in_prof_assist_social", "Assistente Social"),
-    ("in_prof_fonaudiologo", "Fonoaudiólogo"),
+    (chave, label) for chave, label, _, _ in METRIC_ESCOLA_FIELDS
 ]
 
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
-
-# (chave, rótulo, cor, grupo) — define ordem, cores e agrupamento da legenda
-# (Infraestrutura × Profissionais) do gráfico de métricas por escola.
-# in_acessibilidade_inexistente entra como "Outros" (base, igual ao protótipo).
-METRIC_ESCOLA_FIELDS: list[tuple[str, str, str, str]] = [
-    ("in_sala_atendimento_especial", "Sala de atendimento especial", "#4C78A8", "Infraestrutura"),
-    ("in_banheiro_pne",               "Banheiro PNE",                 "#F58518", "Infraestrutura"),
-    ("in_acessibilidade_rampas",      "Rampas",                       "#54A24B", "Infraestrutura"),
-    ("in_acessibilidade_corrimao",    "Corrimão",                     "#E45756", "Infraestrutura"),
-    ("in_acessibilidade_elevador",    "Elevador",                     "#72B7B2", "Infraestrutura"),
-    ("in_acessibilidade_pisos_tateis","Pisos táteis",                 "#EECA3B", "Infraestrutura"),
-    ("in_acessibilidade_vao_livre",   "Vão livre",                    "#B279A2", "Infraestrutura"),
-    ("in_acessibilidade_sinal_visual","Sinal visual",                 "#FF9DA6", "Infraestrutura"),
-    ("in_acessibilidade_sinal_sonoro","Sinal sonoro",                 "#9D755D", "Infraestrutura"),
-    ("in_acessibilidade_sinal_tatil", "Sinal tátil",                  "#1F77B4", "Infraestrutura"),
-    ("in_acessibilidade_sinalizacao", "Sinalização",                  "#D67195", "Infraestrutura"),
-    ("in_acessibilidade_inexistente", "Outros",                       "#444444", "Infraestrutura"),
-    ("in_prof_psicologo",             "Psicólogo",                    "#5254A3", "Profissionais"),
-    ("in_prof_trad_libras",           "Tradutor de Libras",           "#637939", "Profissionais"),
-    ("in_prof_revisor_braille",       "Revisor de Braille",           "#8C6D31", "Profissionais"),
-    ("in_prof_assist_social",         "Assistente social",            "#843C39", "Profissionais"),
-    ("in_prof_fonaudiologo",          "Fonoaudiólogo",                "#7B4173", "Profissionais"),
-]
-COR_AUSENTE = "#E5E5E5"
 
 PAINEL_DESCRICAO = "painel_acessibilidade"
 MAPA_DESCRICAO = "mapa_acessibilidade"
@@ -100,7 +83,7 @@ class AcessibilidadeService:
         - Sem `municipios`: o tab_percent cobre todos os municípios do recorte.
         - Sem `ano`: agrega em todos os censos.
         - `variaveis`: define quais indicadores entram no recorte.
-          • Sem filtro (None/vazio): usa OR sobre TODAS as 17 variáveis —
+          • Sem filtro (None/vazio): usa OR sobre TODAS as 15 variáveis —
             escola conta se tiver QUALQUER variável = 1.
           • Com filtro: usa AND — escola precisa ter TODAS as variáveis = 1.
         - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
@@ -228,7 +211,7 @@ class AcessibilidadeService:
             offset=page * page_size,
         )
 
-        entidades = [(r.co_entidade, r.nu_ano_censo) for r in records]
+        entidades = [r.co_entidade for r in records]
         ideb_map = await self._repository.find_ideb_por_entidades(entidades)
         pibid_map = await self._repository.find_pibid_por_entidades(entidades)
 
@@ -334,7 +317,7 @@ class AcessibilidadeService:
     def _resolver_variaveis(variaveis: list[str] | None) -> tuple[list[str], bool]:
         """Normaliza o filtro de variáveis do painel.
 
-        - Vazio/None → OR sobre TODAS as 17 variáveis (escola conta com
+        - Vazio/None → OR sobre TODAS as 15 variáveis (escola conta com
           QUALQUER variável = 1).
         - Preenchido → AND, validando cada chave contra a whitelist.
 
@@ -643,7 +626,7 @@ class AcessibilidadeService:
         largura 1, colorido se a escola possui (=1) ou cinza se não. Hover traz
         PIBID (subprojeto + bolsistas ativos) e IDEB (anos iniciais/finais/
         ensino médio). Legenda manual agrupada (Infraestrutura × Profissionais)
-        e anotação n/17 ao final de cada barra. Os registros chegam ordenados
+        e anotação n/15 ao final de cada barra. Os registros chegam ordenados
         por score DESC; o eixo Y é invertido para o maior score ficar no topo."""
         fig = go.Figure()
         escolas = [r.no_entidade for r in records]
@@ -820,102 +803,3 @@ class AcessibilidadeService:
             titulo=titulo,
             y_axis_title="Percentual de Acessibilidade",
         )
-
-    # ========================================================================
-    # AUXILIARY METHODS - Métodos auxiliares (mocks, etc)
-    # ========================================================================
-
-    @staticmethod
-    def _mock_ideb_score(co_entidade: int, score_acessibilidade: int) -> float:
-        """Gera um valor determinístico de mock do IDEB baseado no código da entidade e no score."""
-        # Cria uma instância de Random para não alterar o state global
-        rng = random.Random(co_entidade)
-        if score_acessibilidade >= 10:
-            base_ideb = rng.uniform(5.5, 7.5)
-        elif score_acessibilidade >= 6:
-            base_ideb = rng.uniform(4.5, 6.0)
-        else:
-            base_ideb = rng.uniform(3.0, 5.0)
-        ideb_nota = base_ideb + rng.uniform(-0.5, 0.5)
-        return round(max(0.0, min(10.0, ideb_nota)), 1)
-
-    async def build_analise_ideb(
-        self,
-        ano: int | None,
-        municipios: list[str] | None,
-        rede_ensino: list[str] | None = None,
-        tp_localizacao: list[str] | None = None,
-        variaveis: list[str] | None = None,
-    ) -> dict:
-        """Monta o gráfico de cruzamento entre Acessibilidade e IDEB.
-        Mock de dados do IDEB baseado no score de acessibilidade, 
-        pois a fato_ideb original não foi incluída na base atual.
-        """
-        pontos = await self._repository.find_pontos_mapa(
-            ano=ano,
-            municipios=municipios,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-            variaveis=variaveis,
-        )
-
-        if not pontos:
-            return {"plotly": json.loads(go.Figure().to_json()), "tipo": "scatter", "titulo": "Acessibilidade x IDEB"}
-
-        dados = []
-        
-        for p in pontos:
-            nota_ideb = self._mock_ideb_score(p.co_entidade, p.score_acessibilidade)
-            
-            dados.append({
-                "Escola": str(p.no_entidade) if p.no_entidade else "Desconhecida",
-                "Municipio": str(p.no_municipio) if p.no_municipio else "Desconhecido",
-                "Score_Acessibilidade": p.score_acessibilidade,
-                "IDEB": nota_ideb,
-                "Classificacao": p.classificacao_acessibilidade,
-                "Rede": str(p.no_tp_dependencia) if p.no_tp_dependencia else "Desconhecida"
-            })
-
-        df = pd.DataFrame(dados)
-        fig = go.Figure()
-        
-        cores = {
-            "Boa": "#54A24B",
-            "Média": "#EECA3B",
-            "Baixa": "#F58518",
-            "Inexistente": "#E45756"
-        }
-        
-        for classif in ["Boa", "Média", "Baixa", "Inexistente"]:
-            df_classif = df[df["Classificacao"] == classif]
-            if df_classif.empty:
-                continue
-                
-            fig.add_trace(go.Scatter(
-                x=df_classif["Score_Acessibilidade"],
-                y=df_classif["IDEB"],
-                mode='markers',
-                name=classif,
-                marker=dict(
-                    color=cores.get(classif, "#444444"),
-                    size=10,
-                    line=dict(width=1, color='DarkSlateGrey')
-                ),
-                text=df_classif["Escola"] + "<br>Município: " + df_classif["Municipio"] + "<br>Rede: " + df_classif["Rede"],
-                hovertemplate="<b>%{text}</b><br><br>Score Acessibilidade: %{x}<br>IDEB: %{y}<extra></extra>"
-            ))
-            
-        fig.update_layout(
-            title="Cruzamento: Score de Acessibilidade vs Nota do IDEB",
-            xaxis_title="Score de Acessibilidade (0-11)",
-            yaxis_title="Nota Estimada IDEB",
-            legend_title="Classificação",
-            template="plotly_white",
-            hovermode="closest"
-        )
-
-        return {
-            "tipo": "scatter",
-            "titulo": "Cruzamento Acessibilidade vs IDEB",
-            "plotly": self._figure_to_plotly_dict(fig)
-        }
