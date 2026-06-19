@@ -56,18 +56,30 @@ class PainelEscolasResponse(BaseModel):
 
 
 class MapaPonto(BaseModel):
-    """Escola georreferenciada com score e classificação de acessibilidade."""
+    """Linha de gold.fato_score_acessibilidade: escola por ano censo com as 15
+    métricas e score/classificação de acessibilidade já pré-computados."""
 
     co_entidade: int
-    no_entidade: str
-    no_municipio: str | None
-    no_bairro: str | None
-    latitude: float
-    longitude: float
-    no_tp_dependencia: str | None
-    no_tp_localizacao: str | None
-    score_acessibilidade: int = Field(..., ge=0, le=11)
+    nu_ano_censo: int
+    pibid: int | None
+    in_acessibilidade_rampas: float
+    in_acessibilidade_corrimao: float
+    in_acessibilidade_elevador: float
+    in_acessibilidade_pisos_tateis: float
+    in_acessibilidade_vao_livre: float
+    in_acessibilidade_inexistente: float
+    in_acessibilidade_sinal_tatil: float
+    in_acessibilidade_sinal_sonoro: float
+    in_acessibilidade_sinal_visual: float
+    in_sala_atendimento_especial: float
+    in_reserva_pcd: float
+    qt_salas_utilizadas_acessiveis: float
+    tp_aee: float
+    qt_prof_psicologo: float
+    qt_prof_assist_social: float
+    score_acessibilidade: int = Field(..., ge=0, le=15)
     classificacao_acessibilidade: Literal["Boa", "Média", "Baixa", "Inexistente"]
+    dt_carga: str | None
 
 
 class MapaData(BaseModel):

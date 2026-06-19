@@ -1,8 +1,7 @@
-from sqlalchemy import Column, Integer, MetaData, Numeric, String, Table
+from sqlalchemy import Column, DateTime, Integer, MetaData, Numeric, String, Table
 
-# Dois schemas: os painéis leem de `gold` (fonte de verdade do notebook), enquanto
-# o mapa permanece em `silver` porque seu score/classificação depende de colunas que
-# só existem no silver (in_banheiro_pne, in_acessibilidade_sinalizacao, in_prof_*).
+# Tudo lê de `gold` (fonte de verdade do notebook): painéis de `gold.fato_acessibilidade`
+# e o mapa de `gold.fato_score_acessibilidade` (score/classificação pré-computados).
 gold_metadata = MetaData(schema="gold")
 silver_metadata = MetaData(schema="silver")
 
@@ -52,6 +51,37 @@ fato_acessibilidade = Table(
     Column("in_reserva_pcd", Integer),
     Column("qt_prof_psicologo", Integer),
     Column("qt_prof_assist_social", Integer),
+)
+
+
+# fato_score_acessibilidade do gold: uma linha por escola por ano censo com as 15
+# métricas + score (0–15) e classificação já pré-computados pelo pipeline de dados.
+# Lê direto, sem joins — é a base que o mapa do frontend consome. As métricas vêm
+# como Numeric (com NULL no banco), por isso são modeladas como Numeric.
+fato_score_acessibilidade = Table(
+    "fato_score_acessibilidade",
+    gold_metadata,
+    Column("co_entidade", Integer),
+    Column("nu_ano_censo", Integer),
+    Column("pibid", Integer),
+    Column("in_acessibilidade_rampas", Numeric),
+    Column("in_acessibilidade_corrimao", Numeric),
+    Column("in_acessibilidade_elevador", Numeric),
+    Column("in_acessibilidade_pisos_tateis", Numeric),
+    Column("in_acessibilidade_vao_livre", Numeric),
+    Column("in_acessibilidade_inexistente", Numeric),
+    Column("in_acessibilidade_sinal_tatil", Numeric),
+    Column("in_acessibilidade_sinal_sonoro", Numeric),
+    Column("in_acessibilidade_sinal_visual", Numeric),
+    Column("in_sala_atendimento_especial", Numeric),
+    Column("in_reserva_pcd", Numeric),
+    Column("qt_salas_utilizadas_acessiveis", Numeric),
+    Column("tp_aee", Numeric),
+    Column("qt_prof_psicologo", Numeric),
+    Column("qt_prof_assist_social", Numeric),
+    Column("score_acessibilidade", Integer),
+    Column("classificacao_acessibilidade", String),
+    Column("dt_carga", DateTime(timezone=True)),
 )
 
 
@@ -121,77 +151,4 @@ fato_pibid = Table(
     Column("co_entidade", Integer),
     Column("subprojeto", String),
     Column("qtd_bolsistas_ativos", Integer),
-)
-
-
-# ============================================================================
-# SILVER — usado apenas pelo mapa (score/classificação dependem de colunas que
-# não existem no gold). Sufixo `_silver` para deixar a fronteira explícita.
-# ============================================================================
-
-fato_acessibilidade_silver = Table(
-    "fato_acessibilidade",
-    silver_metadata,
-    Column("nu_ano_censo", Integer),
-    Column("co_entidade", Integer),
-    Column("in_banheiro_pne", Integer),
-    Column("in_sala_atendimento_especial", Integer),
-    Column("in_acessibilidade_rampas", Integer),
-    Column("in_acessibilidade_corrimao", Integer),
-    Column("in_acessibilidade_elevador", Integer),
-    Column("in_acessibilidade_pisos_tateis", Integer),
-    Column("in_acessibilidade_vao_livre", Integer),
-    Column("in_acessibilidade_inexistente", Integer),
-    Column("in_acessibilidade_sinal_tatil", Integer),
-    Column("in_acessibilidade_sinal_sonoro", Integer),
-    Column("in_acessibilidade_sinal_visual", Integer),
-    Column("in_acessibilidade_sinalizacao", Integer),
-    Column("in_prof_psicologo", Integer),
-    Column("in_prof_trad_libras", Integer),
-    Column("in_prof_revisor_braille", Integer),
-    Column("in_prof_assist_social", Integer),
-    Column("in_prof_fonaudiologo", Integer),
-    keep_existing=True,
-)
-
-
-dim_entidade_silver = Table(
-    "dim_entidade",
-    silver_metadata,
-    Column("co_entidade", Integer),
-    Column("no_entidade", String),
-    Column("no_bairro", String),
-    Column("latitude", Numeric),
-    Column("longitude", Numeric),
-    Column("co_municipio", Integer),
-    Column("tp_dependencia", Integer),
-    Column("tp_localizacao", Integer),
-    keep_existing=True,
-)
-
-
-dim_municipio_silver = Table(
-    "dim_municipio",
-    silver_metadata,
-    Column("co_municipio", Integer),
-    Column("no_municipio", String),
-    keep_existing=True,
-)
-
-
-dim_tp_dependencia_silver = Table(
-    "dim_tp_dependencia",
-    silver_metadata,
-    Column("co_tp_dependencia", Integer),
-    Column("no_tp_dependencia", String),
-    keep_existing=True,
-)
-
-
-dim_tp_localizacao_silver = Table(
-    "dim_tp_localizacao",
-    silver_metadata,
-    Column("co_tp_localizacao", Integer),
-    Column("no_tp_localizacao", String),
-    keep_existing=True,
 )
