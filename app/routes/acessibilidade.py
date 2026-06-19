@@ -91,6 +91,13 @@ async def get_painel_acessibilidade(
         None,
         description="Localização da escola: Urbana ou Rural.",
     ),
+    pibid: bool | None = Query(
+        None,
+        description=(
+            "Filtra escolas por participação no PIBID. true = só com PIBID; "
+            "false = só sem PIBID; omitido = todas."
+        ),
+    ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> PainelResponse:
     """Retorna o painel completo: gráfico tab_percent (barras horizontais por
@@ -102,6 +109,7 @@ async def get_painel_acessibilidade(
         rede_ensino=rede_ensino,
         tp_localizacao=tp_localizacao,
         variaveis=variaveis,
+        pibid=pibid,
     )
     return PainelResponse(**envelope)
 
@@ -133,6 +141,13 @@ async def get_painel_escolas_acessibilidade(
         None,
         description="Localização da escola: Urbana ou Rural.",
     ),
+    pibid: bool | None = Query(
+        None,
+        description=(
+            "Filtra escolas por participação no PIBID. true = só com PIBID; "
+            "false = só sem PIBID; omitido = todas."
+        ),
+    ),
     page: int = Query(0, ge=0, description="Página (base 0)."),
     page_size: int = Query(5, ge=1, le=50, description="Escolas por página (1–50)."),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
@@ -146,6 +161,7 @@ async def get_painel_escolas_acessibilidade(
         rede_ensino=rede_ensino,
         tp_localizacao=tp_localizacao,
         variaveis=variaveis,
+        pibid=pibid,
         page=page,
         page_size=page_size,
     )
@@ -173,12 +189,19 @@ async def get_mapa_acessibilidade(
             "?variaveis=in_acessibilidade_rampas&variaveis=in_acessibilidade_elevador."
         ),
     ),
+    pibid: bool | None = Query(
+        None,
+        description=(
+            "Filtra escolas por participação no PIBID. true = só com PIBID; "
+            "false = só sem PIBID; omitido = todas."
+        ),
+    ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> MapaResponse:
     """Retorna as linhas de gold.fato_score_acessibilidade (uma por escola por
     ano censo) com as 15 métricas e o score (0-15) e classificação
     (Boa/Média/Baixa/Inexistente) já pré-computados pelo pipeline de dados."""
-    envelope = await service.build_mapa(ano=ano, variaveis=variaveis)
+    envelope = await service.build_mapa(ano=ano, variaveis=variaveis, pibid=pibid)
     return MapaResponse(**envelope)
 
 
@@ -192,6 +215,13 @@ async def get_analise_temporal_acessibilidade(
         "in_acessibilidade_rampas",
         description="Métrica de acessibilidade a plotar nos dois gráficos.",
     ),
+    pibid: bool | None = Query(
+        None,
+        description=(
+            "Filtra escolas por participação no PIBID. true = só com PIBID; "
+            "false = só sem PIBID; omitido = todas."
+        ),
+    ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> AnaliseTemporalResponse:
     """Retorna os gráficos de evolução temporal: por tipo de localização
@@ -199,5 +229,5 @@ async def get_analise_temporal_acessibilidade(
     (uma linha por Federal/Estadual/Municipal/Privada), ambos ao longo
     dos anos censo + opções de filtro de métrica para popular dropdowns
     do frontend."""
-    envelope = await service.build_analise_temporal(metrica=metrica)
+    envelope = await service.build_analise_temporal(metrica=metrica, pibid=pibid)
     return AnaliseTemporalResponse(**envelope)

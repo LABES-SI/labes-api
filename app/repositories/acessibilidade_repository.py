@@ -217,6 +217,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> list[AcessibilidadeMunicipio]:
         """
         Percentual de escolas por município que possuem o(s) indicador(es)
@@ -260,6 +261,8 @@ class AcessibilidadeRepository:
             denom_filters.append(d_sub.c.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             denom_filters.append(l_sub.c.no_tp_localizacao.in_(tp_localizacao))
+        if pibid is not None:
+            denom_filters.append(f_sub.c.pibid == (1 if pibid else 0))
 
         denominador = (
             select(func.count(f_sub.c.co_entidade))
@@ -306,6 +309,8 @@ class AcessibilidadeRepository:
             stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
 
         result = await self._execute(stmt)
         return [_row_to_municipio(row) for row in result]
@@ -342,6 +347,7 @@ class AcessibilidadeRepository:
         self,
         ano: int | None,
         variaveis: list[str] | None,
+        pibid: bool | None = None,
     ) -> list[dict]:
         """Lê a tabela pré-computada gold.fato_score_acessibilidade (sem joins) e
         devolve list[dict] direto para a rota /mapa — score e classificação já
@@ -365,6 +371,8 @@ class AcessibilidadeRepository:
 
         if ano is not None:
             stmt = stmt.where(c.nu_ano_censo == ano)
+        if pibid is not None:
+            stmt = stmt.where(c.pibid == (1 if pibid else 0))
         if variaveis:
             for nome in variaveis:
                 col = VARIAVEIS_ACESSIBILIDADE_MAPA.get(nome)
@@ -391,6 +399,7 @@ class AcessibilidadeRepository:
     async def find_evolucao_por_localizacao(
         self,
         metrica: str,
+        pibid: bool | None = None,
     ) -> list[AcessibilidadeTemporal]:
         """Percentual da métrica por (ano, tipo de localização).
 
@@ -444,6 +453,9 @@ class AcessibilidadeRepository:
             .order_by(f.nu_ano_censo, l.no_tp_localizacao)
         )
 
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
+
         result = await self._execute(stmt)
         return [_row_to_temporal(row) for row in result]
 
@@ -473,6 +485,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> TotalEscolas:
         """
         Calcula a quantidade absoluta de escolas (COUNT) que satisfazem o
@@ -517,7 +530,9 @@ class AcessibilidadeRepository:
             stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
-        
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
+
         result = await self._execute(stmt)
         row = result.first()
 
@@ -530,6 +545,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> TotalEscolas:
         """
         Total absoluto de escolas no recorte (ano/município/rede/localização),
@@ -563,6 +579,8 @@ class AcessibilidadeRepository:
             stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
 
         result = await self._execute(stmt)
         row = result.first()
@@ -578,6 +596,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> list[AcessibilidadeDependencia]:
         """
         Calcula o percentual de escolas que satisfazem o predicado de
@@ -637,6 +656,8 @@ class AcessibilidadeRepository:
             stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
 
         result = await self._execute(stmt)
         return [_row_to_dependencia(row) for row in result]
@@ -650,6 +671,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> list[AcessibilidadeLocalizacao]:
         """
         Calcula o percentual de escolas que satisfazem o predicado de
@@ -707,6 +729,8 @@ class AcessibilidadeRepository:
             stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
 
         result = await self._execute(stmt)
         return [_row_to_localizacao(row) for row in result]
@@ -720,6 +744,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None,
         rede_ensino: list[str] | None,
         tp_localizacao: list[str] | None,
+        pibid: bool | None = None,
     ):
         """Subquery base do gráfico de métricas por escola: uma linha por
         (escola, censo) com as 15 métricas (binarizadas em 0/1), o score (0–15) e
@@ -785,6 +810,8 @@ class AcessibilidadeRepository:
             base = base.where(d.no_tp_dependencia.in_(rede_ensino))
         if tp_localizacao:
             base = base.where(l.no_tp_localizacao.in_(tp_localizacao))
+        if pibid is not None:
+            base = base.where(f.pibid == (1 if pibid else 0))
 
         return base.subquery()
 
@@ -797,6 +824,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[AcessibilidadeEscola]:
@@ -820,6 +848,7 @@ class AcessibilidadeRepository:
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
+            pibid=pibid,
         )
         stmt = (
             select(sub)
@@ -843,6 +872,7 @@ class AcessibilidadeRepository:
         municipios: list[str] | None = None,
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> int:
         """Total de escolas (após dedup do censo mais recente) que casam com os
         filtros — denominador da paginação do gráfico por escola."""
@@ -853,6 +883,7 @@ class AcessibilidadeRepository:
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
+            pibid=pibid,
         )
         stmt = select(func.count()).select_from(sub).where(sub.c.rn == 1)
         total = await self._scalar(stmt)
@@ -862,6 +893,7 @@ class AcessibilidadeRepository:
     async def find_evolucao_por_dependencia(
         self,
         metrica: str,
+        pibid: bool | None = None,
     ) -> list[AcessibilidadeTemporalDependencia]:
         """Percentual da métrica por (ano censo, tipo de dependência
         administrativa).
@@ -915,6 +947,9 @@ class AcessibilidadeRepository:
             )
             .order_by(f.nu_ano_censo, d.no_tp_dependencia)
         )
+
+        if pibid is not None:
+            stmt = stmt.where(f.pibid == (1 if pibid else 0))
 
         result = await self._execute(stmt)
         return [_row_to_temporal_dependencia(row) for row in result]
