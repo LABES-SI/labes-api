@@ -34,26 +34,24 @@ VariavelAcessibilidade = Literal[
     "qt_prof_assist_social",
 ]
 
-# Variáveis do mapa (silver) — o mapa preserva o conjunto silver porque seu
-# score/classificação depende de colunas que não existem no gold. Usado só em /mapa.
+# Variáveis do mapa — as 15 métricas gold de gold.fato_score_acessibilidade.
+# Usadas só como filtro AND opcional do /mapa.
 VariavelAcessibilidadeMapa = Literal[
-    "in_banheiro_pne",
-    "in_sala_atendimento_especial",
     "in_acessibilidade_rampas",
     "in_acessibilidade_corrimao",
     "in_acessibilidade_elevador",
     "in_acessibilidade_pisos_tateis",
     "in_acessibilidade_vao_livre",
+    "qt_salas_utilizadas_acessiveis",
     "in_acessibilidade_inexistente",
     "in_acessibilidade_sinal_tatil",
     "in_acessibilidade_sinal_sonoro",
     "in_acessibilidade_sinal_visual",
-    "in_acessibilidade_sinalizacao",
-    "in_prof_psicologo",
-    "in_prof_trad_libras",
-    "in_prof_revisor_braille",
-    "in_prof_assist_social",
-    "in_prof_fonaudiologo",
+    "tp_aee",
+    "in_sala_atendimento_especial",
+    "in_reserva_pcd",
+    "qt_prof_psicologo",
+    "qt_prof_assist_social",
 ]
 
 RedeEnsino = Literal["Federal", "Estadual", "Municipal", "Privada"]
@@ -160,47 +158,27 @@ async def get_painel_escolas_acessibilidade(
 @router.get(
     "/mapa",
     response_model=MapaResponse,
-    summary="Pontos georreferenciados de escolas com score de acessibilidade",
+    summary="Escolas com score e classificação de acessibilidade pré-computados",
 )
 async def get_mapa_acessibilidade(
     ano: int | None = Query(
         None,
-        description="Ano do censo escolar. Se omitido, retorna todos os anos.",
-    ),
-    municipios: list[str] | None = Query(
-        None,
-        description="Filtra por nome de município (parâmetro repetido).",
+        description="Ano do censo escolar (nu_ano_censo). Se omitido, retorna todos os anos.",
     ),
     variaveis: list[VariavelAcessibilidadeMapa] | None = Query(
         None,
         description=(
-            "Filtro AND: a escola precisa ter TODAS as variáveis marcadas = 1. "
-            "Conjunto silver (inclui in_banheiro_pne, in_acessibilidade_sinalizacao "
-            "e os in_prof_*). Use o parâmetro repetido: "
+            "Filtro AND: a escola precisa ter TODAS as variáveis marcadas > 0. "
+            "Conjunto das 15 métricas gold. Use o parâmetro repetido: "
             "?variaveis=in_acessibilidade_rampas&variaveis=in_acessibilidade_elevador."
         ),
     ),
-    rede_ensino: list[RedeEnsino] | None = Query(
-        None,
-        description="Rede(s) de ensino: Federal, Estadual, Municipal, Privada.",
-    ),
-    tp_localizacao: list[TpLocalizacao] | None = Query(
-        None,
-        description="Localização da escola: Urbana ou Rural.",
-    ),
     service: AcessibilidadeService = Depends(get_acessibilidade_service),
 ) -> MapaResponse:
-    """Retorna lista de escolas georreferenciadas (latitude/longitude) com
-    score (0-11) e classificação (Boa/Média/Baixa/Inexistente) de
-    acessibilidade calculados em SQL a partir de silver.fato_acessibilidade
-    e dimensões associadas."""
-    envelope = await service.build_mapa(
-        ano=ano,
-        municipios=municipios,
-        variaveis=variaveis,
-        rede_ensino=rede_ensino,
-        tp_localizacao=tp_localizacao,
-    )
+    """Retorna as linhas de gold.fato_score_acessibilidade (uma por escola por
+    ano censo) com as 15 métricas e o score (0-15) e classificação
+    (Boa/Média/Baixa/Inexistente) já pré-computados pelo pipeline de dados."""
+    envelope = await service.build_mapa(ano=ano, variaveis=variaveis)
     return MapaResponse(**envelope)
 
 

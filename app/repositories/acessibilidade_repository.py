@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.domain.acessibilidade import (
     AcessibilidadeEscola,
     AcessibilidadeLocalizacao,
-    AcessibilidadeMapaPonto,
     AcessibilidadeMunicipio,
     AcessibilidadeTemporal,
     #P1G4
@@ -28,12 +27,8 @@ from app.models.acessibilidade import (
     fato_ideb_anos_iniciais_esc,
     fato_ideb_ensino_medio_esc,
     fato_pibid,
-    # silver — apenas o mapa
-    dim_entidade_silver,
-    dim_municipio_silver,
-    dim_tp_dependencia_silver,
-    dim_tp_localizacao_silver,
-    fato_acessibilidade_silver,
+    # gold — mapa (score/classificação pré-computados)
+    fato_score_acessibilidade,
 )
 
 
@@ -65,10 +60,11 @@ METRIC_TO_FATO_COLUMN = {
 VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = dict(METRIC_TO_FATO_COLUMN)
 
 
-# Whitelist do mapa: colunas indicadoras (in_) do fato silver. O mapa preserva o
-# conjunto silver porque seu score/classificação depende dessas colunas.
+# Whitelist do mapa: as 15 colunas de métrica de fato_score_acessibilidade (mesmo
+# conjunto gold dos painéis). Usada só para validar/filtrar o parâmetro `variaveis`
+# do /mapa contra a tabela pré-computada.
 VARIAVEIS_ACESSIBILIDADE_MAPA: dict[str, "object"] = {
-    col.name: col for col in fato_acessibilidade_silver.c if col.name.startswith("in_")
+    nome: fato_score_acessibilidade.c[nome] for nome in METRIC_TO_FATO_COLUMN
 }
 
 
@@ -94,21 +90,6 @@ def _row_to_temporal(row) -> AcessibilidadeTemporal:
         percentual=float(row.percentual),
     )
 
-
-def _row_to_mapa_ponto(row) -> AcessibilidadeMapaPonto:
-    return AcessibilidadeMapaPonto(
-        co_entidade=int(row.co_entidade),
-        no_entidade=row.no_entidade,
-        no_municipio=row.no_municipio,
-        no_bairro=row.no_bairro,
-        latitude=float(row.latitude),
-        longitude=float(row.longitude),
-        no_tp_dependencia=row.no_tp_dependencia,
-        no_tp_localizacao=row.no_tp_localizacao,
-        score_acessibilidade=int(row.score_acessibilidade),
-        classificacao_acessibilidade=row.classificacao_acessibilidade,
-        ideb=float(row.ideb) if row.ideb is not None else None,
-    )
 
 #P1G4
 def _row_to_total_escolas(row) -> TotalEscolas:
@@ -184,8 +165,8 @@ class AcessibilidadeRepository:
     Acessa o domínio de acessibilidade no warehouse.
 
     Painéis: gold.fato_acessibilidade (uma linha por escola por ano censo) +
-    dimensões gold. Mapa: silver.fato_acessibilidade + dimensões silver (score/
-    classificação dependem de colunas só-silver). Owner do mart: squad de dados.
+    dimensões gold. Mapa: gold.fato_score_acessibilidade (score/classificação
+    pré-computados, sem joins). Owner do mart: squad de dados.
     """
 
     def __init__(
@@ -352,157 +333,57 @@ class AcessibilidadeRepository:
         """Lista de anos do censo presentes em fato_acessibilidade."""
         return [int(v) for v in await self._find_distinct(fato_acessibilidade.c.nu_ano_censo)]
 
-    def _build_pontos_mapa_stmt(
+    # As 15 colunas de métrica de fato_score_acessibilidade vêm como Numeric com
+    # NULL possível no banco — selecionadas via COALESCE(col, 0) para sair como 0,
+    # coerente com o cálculo do score (NULL conta como 0).
+    _MAPA_METRIC_COLS = tuple(METRIC_TO_FATO_COLUMN)
+
+    async def find_pontos_mapa_raw(
         self,
         ano: int | None,
-        municipios: list[str] | None,
         variaveis: list[str] | None,
-        rede_ensino: list[str] | None,
-        tp_localizacao: list[str] | None,
-    ):
-        """Monta o SELECT do mapa de acessibilidade (joins + score +
-        classificação + filtros). Helper compartilhado por
-        `find_pontos_mapa` (dataclass path, usado pelos testes visuais) e
-        `find_pontos_mapa_raw` (dict path, usado pela rota HTTP).
+    ) -> list[dict]:
+        """Lê a tabela pré-computada gold.fato_score_acessibilidade (sem joins) e
+        devolve list[dict] direto para a rota /mapa — score e classificação já
+        vêm prontos do pipeline de dados.
 
-        Permanece em silver: score/classificação dependem de in_banheiro_pne e
-        in_acessibilidade_sinalizacao, que não existem no fato gold."""
-        f = fato_acessibilidade_silver.c
-        e = dim_entidade_silver.c
-        m = dim_municipio_silver.c
-        d = dim_tp_dependencia_silver.c
-        l = dim_tp_localizacao_silver.c
-
-        def coalesce0(col):
-            return func.coalesce(col, 0)
-
-        score_cols = [
-            f.in_sala_atendimento_especial,
-            f.in_banheiro_pne,
-            f.in_acessibilidade_rampas,
-            f.in_acessibilidade_corrimao,
-            f.in_acessibilidade_elevador,
-            f.in_acessibilidade_pisos_tateis,
-            f.in_acessibilidade_vao_livre,
-            f.in_acessibilidade_sinal_visual,
-            f.in_acessibilidade_sinal_sonoro,
-            f.in_acessibilidade_sinal_tatil,
-            f.in_acessibilidade_sinalizacao,
-        ]
-        score_expr = sum((coalesce0(c) for c in score_cols), literal(0))
-
-        baixa_cols = [c for c in score_cols if c is not f.in_acessibilidade_corrimao]
-        baixa_sum = sum((coalesce0(c) for c in baixa_cols), literal(0))
-
-        classificacao_expr = case(
-            (score_expr >= 8, literal("Boa")),
-            (score_expr >= 5, literal("Média")),
-            (baixa_sum >= 1, literal("Baixa")),
-            else_=literal("Inexistente"),
-        )
-
-        join_tree = (
-            fato_acessibilidade_silver
-            .join(dim_entidade_silver, f.co_entidade == e.co_entidade)
-            .outerjoin(dim_municipio_silver, e.co_municipio == m.co_municipio)
-            .outerjoin(dim_tp_dependencia_silver, e.tp_dependencia == d.co_tp_dependencia)
-            .outerjoin(dim_tp_localizacao_silver, e.tp_localizacao == l.co_tp_localizacao)
-        )
-
-        stmt = (
-            select(
-                e.co_entidade.label("co_entidade"),
-                e.no_entidade.label("no_entidade"),
-                m.no_municipio.label("no_municipio"),
-                e.no_bairro.label("no_bairro"),
-                e.latitude.label("latitude"),
-                e.longitude.label("longitude"),
-                d.no_tp_dependencia.label("no_tp_dependencia"),
-                l.no_tp_localizacao.label("no_tp_localizacao"),
-                score_expr.label("score_acessibilidade"),
-                classificacao_expr.label("classificacao_acessibilidade"),
-            )
-            .select_from(join_tree)
-            .where(e.latitude.is_not(None), e.longitude.is_not(None))
+        - As 15 métricas saem com COALESCE(col, 0): NULL vira 0.
+        - `ano`: filtra `nu_ano_censo`.
+        - `variaveis`: AND sobre as 15 métricas gold (a escola precisa ter TODAS
+          as colunas indicadas > 0). Validado contra `VARIAVEIS_ACESSIBILIDADE_MAPA`.
+        """
+        c = fato_score_acessibilidade.c
+        stmt = select(
+            c.co_entidade,
+            c.nu_ano_censo,
+            c.pibid,
+            *(func.coalesce(c[nome], 0).label(nome) for nome in self._MAPA_METRIC_COLS),
+            c.score_acessibilidade,
+            c.classificacao_acessibilidade,
+            c.dt_carga,
         )
 
         if ano is not None:
-            stmt = stmt.where(f.nu_ano_censo == ano)
-        if municipios:
-            stmt = stmt.where(m.no_municipio.in_(municipios))
-        if rede_ensino:
-            stmt = stmt.where(d.no_tp_dependencia.in_(rede_ensino))
-        if tp_localizacao:
-            stmt = stmt.where(l.no_tp_localizacao.in_(tp_localizacao))
+            stmt = stmt.where(c.nu_ano_censo == ano)
         if variaveis:
             for nome in variaveis:
                 col = VARIAVEIS_ACESSIBILIDADE_MAPA.get(nome)
                 if col is None:
                     raise ValueError(f"Variável inválida: {nome!r}")
-                stmt = stmt.where(col == 1)
+                stmt = stmt.where(col > 0)
 
-        return stmt
-
-    async def find_pontos_mapa(
-        self,
-        ano: int | None,
-        municipios: list[str] | None,
-        variaveis: list[str] | None,
-        rede_ensino: list[str] | None,
-        tp_localizacao: list[str] | None,
-    ) -> list[AcessibilidadeMapaPonto]:
-        """
-        Lista escolas georreferenciadas com score (0-11) e classificação
-        (Boa/Média/Baixa/Inexistente) de acessibilidade.
-
-        - `variaveis` é AND: a escola precisa ter TODAS as colunas indicadas = 1.
-        - `municipios`/`rede_ensino`/`tp_localizacao` filtram pelos nomes
-          legíveis das dimensões (no_municipio, no_tp_dependencia, no_tp_localizacao).
-        - Quirk preservado da regra original: 'Baixa' soma 10 indicadores
-          (omite in_acessibilidade_corrimao); 'Boa'/'Média' somam 11.
-        """
-        stmt = self._build_pontos_mapa_stmt(
-            ano=ano,
-            municipios=municipios,
-            variaveis=variaveis,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
-        result = await self._execute(stmt)
-        return [_row_to_mapa_ponto(row) for row in result]
-
-    async def find_pontos_mapa_raw(
-        self,
-        ano: int | None,
-        municipios: list[str] | None,
-        variaveis: list[str] | None,
-        rede_ensino: list[str] | None,
-        tp_localizacao: list[str] | None,
-    ) -> list[dict]:
-        """Versão otimizada para o endpoint HTTP: retorna list[dict] direto,
-        sem materializar dataclasses. Usada pela rota /mapa onde o overhead
-        de asdict() × ~9.700 linhas é significativo. Coage Numeric → float
-        para o JSON sair idêntico ao caminho do dataclass."""
-        stmt = self._build_pontos_mapa_stmt(
-            ano=ano,
-            municipios=municipios,
-            variaveis=variaveis,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
-        )
         result = await self._execute(stmt)
         return [
             {
                 "co_entidade": int(r["co_entidade"]),
-                "no_entidade": r["no_entidade"],
-                "no_municipio": r["no_municipio"],
-                "no_bairro": r["no_bairro"],
-                "latitude": float(r["latitude"]),
-                "longitude": float(r["longitude"]),
-                "no_tp_dependencia": r["no_tp_dependencia"],
-                "no_tp_localizacao": r["no_tp_localizacao"],
+                "nu_ano_censo": int(r["nu_ano_censo"]),
+                "pibid": int(r["pibid"]) if r["pibid"] is not None else None,
+                **{nome: float(r[nome]) for nome in self._MAPA_METRIC_COLS},
                 "score_acessibilidade": int(r["score_acessibilidade"]),
                 "classificacao_acessibilidade": r["classificacao_acessibilidade"],
+                "dt_carga": (
+                    r["dt_carga"].isoformat() if r["dt_carga"] is not None else None
+                ),
             }
             for r in result.mappings()
         ]

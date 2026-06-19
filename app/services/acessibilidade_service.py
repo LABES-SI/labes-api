@@ -254,20 +254,14 @@ class AcessibilidadeService:
     async def build_mapa(
         self,
         ano: int | None,
-        municipios: list[str] | None,
         variaveis: list[str] | None,
-        rede_ensino: list[str] | None,
-        tp_localizacao: list[str] | None,
     ) -> dict:
-        """Lista escolas georreferenciadas com score e classificação de
-        acessibilidade calculados em SQL. Sem transformação extra — apenas
+        """Lista as linhas de gold.fato_score_acessibilidade (score e
+        classificação pré-computados). Sem transformação extra — apenas
         envelopa a saída do repository."""
         pontos = await self._repository.find_pontos_mapa_raw(
             ano=ano,
-            municipios=municipios,
             variaveis=variaveis,
-            rede_ensino=rede_ensino,
-            tp_localizacao=tp_localizacao,
         )
         return {
             "descricao": MAPA_DESCRICAO,
