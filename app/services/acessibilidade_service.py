@@ -77,6 +77,7 @@ class AcessibilidadeService:
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
         variaveis: list[str] | None = None,
+        pibid: bool | None = None,
     ) -> dict:
         """Monta o painel de acessibilidade: gráfico + opções de filtro.
 
@@ -106,6 +107,7 @@ class AcessibilidadeService:
                 municipios=municipios,
                 rede_ensino=rede_ensino,
                 tp_localizacao=tp_localizacao,
+                pibid=pibid,
             ),
             self._repository.find_total_escolas(
                 variaveis=variaveis,
@@ -114,12 +116,14 @@ class AcessibilidadeService:
                 municipios=municipios,
                 rede_ensino=rede_ensino,
                 tp_localizacao=tp_localizacao,
+                pibid=pibid,
             ),
             self._repository.find_total_escolas_geral(
                 ano=ano,
                 municipios=municipios,
                 rede_ensino=rede_ensino,
                 tp_localizacao=tp_localizacao,
+                pibid=pibid,
             ),
             self._repository.find_media_por_dependencia(
                 variaveis=variaveis,
@@ -128,6 +132,7 @@ class AcessibilidadeService:
                 municipios=municipios,
                 rede_ensino=rede_ensino,
                 tp_localizacao=tp_localizacao,
+                pibid=pibid,
             ),
             self._repository.find_media_por_localizacao(
                 variaveis=variaveis,
@@ -136,6 +141,7 @@ class AcessibilidadeService:
                 municipios=municipios,
                 rede_ensino=rede_ensino,
                 tp_localizacao=tp_localizacao,
+                pibid=pibid,
             ),
         )
 
@@ -179,6 +185,7 @@ class AcessibilidadeService:
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
         variaveis: list[str] | None = None,
+        pibid: bool | None = None,
         page: int = 0,
         page_size: int = PAINEL_ESCOLAS_PAGE_SIZE,
     ) -> dict:
@@ -198,6 +205,7 @@ class AcessibilidadeService:
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
+            pibid=pibid,
         )
 
         records = await self._repository.find_metricas_por_escola(
@@ -207,6 +215,7 @@ class AcessibilidadeService:
             municipios=municipios,
             rede_ensino=rede_ensino,
             tp_localizacao=tp_localizacao,
+            pibid=pibid,
             limit=page_size,
             offset=page * page_size,
         )
@@ -255,6 +264,7 @@ class AcessibilidadeService:
         self,
         ano: int | None,
         variaveis: list[str] | None,
+        pibid: bool | None = None,
     ) -> dict:
         """Lista as linhas de gold.fato_score_acessibilidade (score e
         classificação pré-computados). Sem transformação extra — apenas
@@ -262,13 +272,18 @@ class AcessibilidadeService:
         pontos = await self._repository.find_pontos_mapa_raw(
             ano=ano,
             variaveis=variaveis,
+            pibid=pibid,
         )
         return {
             "descricao": MAPA_DESCRICAO,
             "data": {"pontos": pontos},
         }
 
-    async def build_analise_temporal(self, metrica: str) -> dict:
+    async def build_analise_temporal(
+        self,
+        metrica: str,
+        pibid: bool | None = None,
+    ) -> dict:
         """Monta os gráficos de evolução temporal: por tipo de localização
         (urbana/rural) e por tipo de dependência administrativa
         (Federal/Estadual/Municipal/Privada, P1G6). Ambos parametrizados
@@ -282,12 +297,14 @@ class AcessibilidadeService:
             )
         records = await self._repository.find_evolucao_por_localizacao(
             metrica=metrica,
+            pibid=pibid,
         )
         grafico = self._build_evolucao_temporal(records, metrica)
 
 
         dep_records = await self._repository.find_evolucao_por_dependencia(
             metrica=metrica,
+            pibid=pibid,
         )
         grafico_dependencia = self._build_evolucao_temporal_dependencia(
             dep_records, metrica

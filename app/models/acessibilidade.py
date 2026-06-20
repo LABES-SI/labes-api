@@ -36,6 +36,7 @@ fato_acessibilidade = Table(
     gold_metadata,
     Column("nu_ano_censo", Integer),
     Column("co_entidade", Integer),
+    Column("pibid", Integer),
     Column("in_acessibilidade_rampas", Integer),
     Column("in_acessibilidade_corrimao", Integer),
     Column("in_acessibilidade_elevador", Integer),
