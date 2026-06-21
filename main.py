@@ -7,6 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from app.core.exceptions import AppError, app_error_handler
 from app.core.logging import configure_logging
 from app.routes.acessibilidade import router as acessibilidade_router
+from app.routes.conectividade import router as conectividade_router
 from app.routes.filtros import router as filtros_router
 from app.routes.health import router as health_router
 
@@ -36,6 +37,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_exception_handler(AppError, app_error_handler)
 app.include_router(health_router)
 app.include_router(acessibilidade_router)
+app.include_router(conectividade_router)
 app.include_router(filtros_router)
 
 

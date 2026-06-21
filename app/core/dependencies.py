@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import (
 from app.core.auth import get_current_user
 from app.core.config import settings
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
+from app.repositories.conectividade_repository import ConectividadeRepository
 from app.services.acessibilidade_service import AcessibilidadeService
+from app.services.conectividade_service import ConectividadeService
 from app.services.filtros_service import FiltrosService
 
 
@@ -57,6 +59,20 @@ def get_acessibilidade_service(
     return AcessibilidadeService(repository)
 
 
+def get_conectividade_repository() -> ConectividadeRepository:
+    # Mesmo padrão de acessibilidade: sessionmaker (sessão-por-query) + o
+    # semáforo compartilhado de warehouse.
+    return ConectividadeRepository(
+        SessionLocal, semaphore=warehouse_query_semaphore
+    )
+
+
+def get_conectividade_service(
+    repository: ConectividadeRepository = Depends(get_conectividade_repository),
+) -> ConectividadeService:
+    return ConectividadeService(repository)
+
+
 def get_filtros_service(
     repository: AcessibilidadeRepository = Depends(get_acessibilidade_repository),
 ) -> FiltrosService:
@@ -70,6 +86,8 @@ __all__ = [
     "get_warehouse_session",
     "get_acessibilidade_repository",
     "get_acessibilidade_service",
+    "get_conectividade_repository",
+    "get_conectividade_service",
     "get_filtros_service",
     "async_engine",
     "SessionLocal",
