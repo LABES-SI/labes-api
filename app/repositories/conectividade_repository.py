@@ -693,7 +693,7 @@ class ConectividadeRepository:
     def _build_metricas_escola_subquery(
         self,
         *,
-        variaveis: list[str],
+        variaveis: list[str] | None,
         combine_or: bool,
         ano: int | None,
         municipios: list[str] | None,
@@ -706,9 +706,6 @@ class ConectividadeRepository:
         o `rn` (row_number por escola, censo DESC) para dedup do censo mais
         recente. Compartilhada por `find_metricas_por_escola` (lista paginada) e
         `count_metricas_por_escola` (total para a paginação)."""
-        if not variaveis:
-            raise ValueError("É necessário passar ao menos uma variável para o painel")
-        metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
         f = fato_conectividade.c
         e = dim_entidade.c
@@ -752,8 +749,13 @@ class ConectividadeRepository:
                 rn,
             )
             .select_from(join_tree)
-            .where(metric_predicate, e.no_entidade.is_not(None))
+            .where(e.no_entidade.is_not(None))
         )
+
+        # Aplica-se o filtro de métricas apenas se o utilizador enviou variáveis
+        if variaveis:
+            metric_predicate = _build_metric_predicate(variaveis, combine_or)
+            base = base.where(metric_predicate)
 
         if ano is not None:
             base = base.where(f.nu_ano_censo == ano)
