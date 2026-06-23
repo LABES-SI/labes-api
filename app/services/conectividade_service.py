@@ -196,11 +196,15 @@ class ConectividadeService:
 
         Retorna `{"grafico": <envelope>, "paginacao": {...}}`.
         """
-        variaveis_efetivas, combine_or = self._resolver_variaveis(variaveis)
+
+        if variaveis:
+            for v in variaveis:
+                if v not in METRICS_BY_KEY:
+                    raise ValueError(f"Variável inválida: {v!r}")
 
         total_escolas = await self._repository.count_metricas_por_escola(
-            variaveis=variaveis_efetivas,
-            combine_or=combine_or,
+            variaveis=variaveis,
+            combine_or=False, # Se tem filtro de variáveis explícito, a regra é AND
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -209,8 +213,8 @@ class ConectividadeService:
         )
 
         records = await self._repository.find_metricas_por_escola(
-            variaveis=variaveis_efetivas,
-            combine_or=combine_or,
+            variaveis=variaveis,
+            combine_or=False,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -229,7 +233,13 @@ class ConectividadeService:
         )
         inicio = page * page_size
 
-        label = self._filtro_variaveis_label(variaveis_efetivas, combine_or)
+        # Ajuste dinâmico do título para fazer sentido sem filtros
+        if variaveis:
+            label = self._filtro_variaveis_label(variaveis, False)
+            titulo_base = f"Métricas de conectividade por escola com {label}"
+        else:
+            titulo_base = "Métricas de conectividade por escola"
+
         recorte = self._recorte_escola_label(ano, records)
         sufixo_municipio = (
             f" {self._municipios_label(municipios)}" if municipios else ""
@@ -239,10 +249,8 @@ class ConectividadeService:
             if records
             else "  |  0 escolas"
         )
-        titulo = (
-            f"Métricas de conectividade por escola com {label}"
-            f"{sufixo_municipio} — {recorte}{intervalo}"
-        )
+        titulo = f"{titulo_base}{sufixo_municipio} — {recorte}{intervalo}"
+        
         figure = self._build_metricas_por_escola_figure(
             records, titulo, ideb_map, pibid_map
         )
@@ -657,8 +665,10 @@ class ConectividadeService:
 
             # PIBID
             pibid_data = pibid_map.get(r.co_entidade, {})
-            subprojeto = pibid_data.get("subprojetos", "Sem registro")
-            bolsistas = pibid_data.get("bolsistas", "—")
+            # O "or" garante que se o banco devolver None ou string vazia, ele aplica a mensagem
+            subprojeto = pibid_data.get("subprojetos") or "Sem registro"
+            bolsistas_raw = pibid_data.get("bolsistas")
+            bolsistas = str(bolsistas_raw) if bolsistas_raw is not None else "—"
 
             cached_data.append({
                 "nu_ano_censo": r.nu_ano_censo,
