@@ -12,3 +12,17 @@ dependencies = [
     "plotly>=5.22",
     "pandas>=2.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+# Testes assíncronos sem precisar decorar cada um com @pytest.mark.asyncio.
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Os render_*.py de tests/visual sobem o engine do warehouse no import — não são
+# testes pytest, são scripts de inspeção manual. Ignorados na coleta.
+addopts = "--ignore=tests/visual"
