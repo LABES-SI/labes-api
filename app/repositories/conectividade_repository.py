@@ -4,77 +4,76 @@ from contextlib import asynccontextmanager
 from sqlalchemy import Numeric, and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.domain.acessibilidade import (
-    AcessibilidadeEscola,
-    AcessibilidadeLocalizacao,
-    AcessibilidadeMunicipio,
-    AcessibilidadeTemporal,
-    #P1G4
+from app.domain.conectividade import (
+    ConectividadeDependencia,
+    ConectividadeEscola,
+    ConectividadeLocalizacao,
+    ConectividadeMunicipio,
+    ConectividadeTemporal,
+    ConectividadeTemporalDependencia,
     TotalEscolas,
-    #P1G5
-    AcessibilidadeDependencia,
-    #P1G6
-    AcessibilidadeTemporalDependencia,
 )
-from app.models.acessibilidade import (
+from app.models.conectividade import (
     # gold — painéis
     dim_entidade,
     dim_municipio,
     dim_tp_dependencia,
     dim_tp_localizacao,
-    fato_acessibilidade,
+    fato_conectividade,
     fato_ideb_anos_finais_esc,
     fato_ideb_anos_iniciais_esc,
     fato_ideb_ensino_medio_esc,
     fato_pibid,
     # gold — mapa (score/classificação pré-computados)
-    fato_score_acessibilidade,
+    fato_score_conectividade,
 )
 
 
-# Conjunto único das 15 métricas do notebook (cell-10), na mesma ordem. Fonte de
+# Conjunto único das 17 métricas do notebook (cell-12), na mesma ordem. Fonte de
 # verdade dos painéis: predicado de filtro, subquery por escola/score, validação
-# da análise temporal e `_row_to_escola`. Colunas qt_*/tp_aee são tratadas como
-# binário (> 0 = possui) onde entram em contagem/score.
+# da análise temporal e `_row_to_escola`. Colunas qt_*/tp_rede_local são tratadas
+# como binário (> 0 = possui) onde entram em contagem/score.
 METRIC_TO_FATO_COLUMN = {
-    "in_acessibilidade_rampas": fato_acessibilidade.c.in_acessibilidade_rampas,
-    "in_acessibilidade_corrimao": fato_acessibilidade.c.in_acessibilidade_corrimao,
-    "in_acessibilidade_elevador": fato_acessibilidade.c.in_acessibilidade_elevador,
-    "in_acessibilidade_pisos_tateis": fato_acessibilidade.c.in_acessibilidade_pisos_tateis,
-    "in_acessibilidade_vao_livre": fato_acessibilidade.c.in_acessibilidade_vao_livre,
-    "qt_salas_utilizadas_acessiveis": fato_acessibilidade.c.qt_salas_utilizadas_acessiveis,
-    "in_acessibilidade_inexistente": fato_acessibilidade.c.in_acessibilidade_inexistente,
-    "in_acessibilidade_sinal_tatil": fato_acessibilidade.c.in_acessibilidade_sinal_tatil,
-    "in_acessibilidade_sinal_sonoro": fato_acessibilidade.c.in_acessibilidade_sinal_sonoro,
-    "in_acessibilidade_sinal_visual": fato_acessibilidade.c.in_acessibilidade_sinal_visual,
-    "tp_aee": fato_acessibilidade.c.tp_aee,
-    "in_sala_atendimento_especial": fato_acessibilidade.c.in_sala_atendimento_especial,
-    "in_reserva_pcd": fato_acessibilidade.c.in_reserva_pcd,
-    "qt_prof_psicologo": fato_acessibilidade.c.qt_prof_psicologo,
-    "qt_prof_assist_social": fato_acessibilidade.c.qt_prof_assist_social,
+    "in_internet": fato_conectividade.c.in_internet,
+    "in_internet_alunos": fato_conectividade.c.in_internet_alunos,
+    "in_internet_administrativo": fato_conectividade.c.in_internet_administrativo,
+    "in_internet_aprendizagem": fato_conectividade.c.in_internet_aprendizagem,
+    "in_internet_comunidade": fato_conectividade.c.in_internet_comunidade,
+    "in_banda_larga": fato_conectividade.c.in_banda_larga,
+    "in_acesso_internet_computador": fato_conectividade.c.in_acesso_internet_computador,
+    "in_aces_internet_disp_pessoais": fato_conectividade.c.in_aces_internet_disp_pessoais,
+    "tp_rede_local": fato_conectividade.c.tp_rede_local,
+    "in_computador": fato_conectividade.c.in_computador,
+    "in_desktop_aluno": fato_conectividade.c.in_desktop_aluno,
+    "qt_desktop_aluno": fato_conectividade.c.qt_desktop_aluno,
+    "in_comp_portatil_aluno": fato_conectividade.c.in_comp_portatil_aluno,
+    "qt_comp_portatil_aluno": fato_conectividade.c.qt_comp_portatil_aluno,
+    "in_tablet_aluno": fato_conectividade.c.in_tablet_aluno,
+    "qt_tablet_aluno": fato_conectividade.c.qt_tablet_aluno,
+    "in_redes_sociais": fato_conectividade.c.in_redes_sociais,
 }
 
 
 # Whitelist de variáveis dos painéis (gold). Consumida pelo Literal da rota e pelo
 # filtro do repository — protege contra string crua do usuário virar coluna SQL.
-VARIAVEIS_ACESSIBILIDADE: dict[str, "object"] = dict(METRIC_TO_FATO_COLUMN)
+VARIAVEIS_CONECTIVIDADE: dict[str, "object"] = dict(METRIC_TO_FATO_COLUMN)
 
 
-# Whitelist do mapa: as 15 colunas de métrica de fato_score_acessibilidade (mesmo
+# Whitelist do mapa: as 17 colunas de métrica de fato_score_conectividade (mesmo
 # conjunto gold dos painéis). Usada só para validar/filtrar o parâmetro `variaveis`
 # do /mapa contra a tabela pré-computada.
-VARIAVEIS_ACESSIBILIDADE_MAPA: dict[str, "object"] = {
-    nome: fato_score_acessibilidade.c[nome] for nome in METRIC_TO_FATO_COLUMN
+VARIAVEIS_CONECTIVIDADE_MAPA: dict[str, "object"] = {
+    nome: fato_score_conectividade.c[nome] for nome in METRIC_TO_FATO_COLUMN
 }
 
 
 # Ano fixo da nota do IDEB exposta no hover do gráfico por escola — espelha
-# ANO_IDEB=2023 do notebook (cell-10). Lido diretamente de uma coluna por etapa.
+# ANO_IDEB=2023 do notebook (cell-12). Lido diretamente de uma coluna por etapa.
 IDEB_YEAR_COLUMN = "ideb_2023"
 
 
-def _row_to_municipio(row) -> AcessibilidadeMunicipio:
-    return AcessibilidadeMunicipio(
+def _row_to_municipio(row) -> ConectividadeMunicipio:
+    return ConectividadeMunicipio(
         codigo_municipio=int(row.codigo_municipio),
         municipio=row.municipio,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
@@ -82,8 +81,8 @@ def _row_to_municipio(row) -> AcessibilidadeMunicipio:
     )
 
 
-def _row_to_temporal(row) -> AcessibilidadeTemporal:
-    return AcessibilidadeTemporal(
+def _row_to_temporal(row) -> ConectividadeTemporal:
+    return ConectividadeTemporal(
         ano=int(row.ano),
         codigo_localizacao=int(row.codigo_localizacao),
         localizacao=row.localizacao,
@@ -91,15 +90,14 @@ def _row_to_temporal(row) -> AcessibilidadeTemporal:
     )
 
 
-#P1G4
 def _row_to_total_escolas(row) -> TotalEscolas:
     return TotalEscolas(
         total=int(row.total_escolas) if row.total_escolas is not None else 0,
     )
 
-#P1G5
-def _row_to_dependencia(row) -> AcessibilidadeDependencia:
-    return AcessibilidadeDependencia(
+
+def _row_to_dependencia(row) -> ConectividadeDependencia:
+    return ConectividadeDependencia(
         codigo_dependencia=int(row.codigo_dependencia),
         dependencia=row.dependencia,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
@@ -107,8 +105,8 @@ def _row_to_dependencia(row) -> AcessibilidadeDependencia:
     )
 
 
-def _row_to_localizacao(row) -> AcessibilidadeLocalizacao:
-    return AcessibilidadeLocalizacao(
+def _row_to_localizacao(row) -> ConectividadeLocalizacao:
+    return ConectividadeLocalizacao(
         codigo_localizacao=int(row.codigo_localizacao),
         localizacao=row.localizacao,
         percentual=float(row.percentual) if row.percentual is not None else 0.0,
@@ -116,10 +114,10 @@ def _row_to_localizacao(row) -> AcessibilidadeLocalizacao:
     )
 
 
-def _row_to_escola(row) -> AcessibilidadeEscola:
-    # Binário uniforme: qt_*/tp_aee podem vir > 1, normaliza para 0/1 (possui).
+def _row_to_escola(row) -> ConectividadeEscola:
+    # Binário uniforme: qt_*/tp_rede_local podem vir > 1, normaliza para 0/1.
     metricas = {chave: int((row[chave] or 0) > 0) for chave in METRIC_TO_FATO_COLUMN}
-    return AcessibilidadeEscola(
+    return ConectividadeEscola(
         co_entidade=int(row["co_entidade"]),
         no_entidade=row["no_entidade"],
         nu_ano_censo=int(row["nu_ano_censo"]),
@@ -127,9 +125,9 @@ def _row_to_escola(row) -> AcessibilidadeEscola:
         score=int(row["score"] or 0),
     )
 
-#P1G6
-def _row_to_temporal_dependencia(row) -> AcessibilidadeTemporalDependencia:
-    return AcessibilidadeTemporalDependencia(
+
+def _row_to_temporal_dependencia(row) -> ConectividadeTemporalDependencia:
+    return ConectividadeTemporalDependencia(
         ano=int(row.ano),
         codigo_dependencia=int(row.codigo_dependencia),
         dependencia=row.dependencia,
@@ -147,25 +145,25 @@ def _build_metric_predicate(variaveis: list[str], combine_or: bool):
     """
     cols = []
     for nome in variaveis:
-        col = VARIAVEIS_ACESSIBILIDADE.get(nome)
+        col = VARIAVEIS_CONECTIVIDADE.get(nome)
         if col is None:
             raise ValueError(
                 f"Variável inválida: {nome!r}. "
-                f"Esperado uma de: {sorted(VARIAVEIS_ACESSIBILIDADE)}"
+                f"Esperado uma de: {sorted(VARIAVEIS_CONECTIVIDADE)}"
             )
         cols.append(col)
     combinator = or_ if combine_or else and_
-    # Binário uniforme (> 0): colunas in_ 0/1 seguem equivalentes; qt_*/tp_aee
+    # Binário uniforme (> 0): colunas in_ 0/1 seguem equivalentes; qt_*/tp_rede_local
     # contam como "possui" quando > 0.
     return combinator(*[c > 0 for c in cols])
 
 
-class AcessibilidadeRepository:
+class ConectividadeRepository:
     """
-    Acessa o domínio de acessibilidade no warehouse.
+    Acessa o domínio de conectividade no warehouse.
 
-    Painéis: gold.fato_acessibilidade (uma linha por escola por ano censo) +
-    dimensões gold. Mapa: gold.fato_score_acessibilidade (score/classificação
+    Painéis: gold.fato_conectividade (uma linha por escola por ano censo) +
+    dimensões gold. Mapa: gold.fato_score_conectividade (score/classificação
     pré-computados, sem joins). Owner do mart: squad de dados.
     """
 
@@ -192,12 +190,7 @@ class AcessibilidadeRepository:
                 yield
 
     async def _execute(self, stmt):
-        """Abre uma sessão dedicada para esta query e devolve o Result.
-
-        As queries usam SQLAlchemy Core (Row/mappings, já bufferizados pelo
-        driver async no execute), então o Result continua consumível depois que
-        a sessão fecha — não há I/O lazy nem expire_on_commit em jogo.
-        """
+        """Abre uma sessão dedicada para esta query e devolve o Result."""
         async with self._limit():
             async with self._sessionmaker() as session:
                 return await session.execute(stmt)
@@ -218,32 +211,22 @@ class AcessibilidadeRepository:
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
         pibid: bool | None = None,
-    ) -> list[AcessibilidadeMunicipio]:
+    ) -> list[ConectividadeMunicipio]:
         """
         Percentual de escolas por município que possuem o(s) indicador(es)
         de `variaveis` = 1, sobre o total de escolas do município no recorte.
-
-        - `combine_or=False` (default): semântica AND — escola precisa ter
-          TODAS as variáveis = 1.
-        - `combine_or=True`: semântica OR — escola conta se tiver QUALQUER
-          variável = 1 (usado pelo painel quando o filtro chega vazio).
-        - Denominador (subconsulta correlacionada): COUNT(co_entidade) do
-          mesmo município/ano (+ rede_ensino/tp_localização se passados),
-          sem o filtro de métrica.
-        - `municipios` filtra apenas a saída (cada município é independente
-          via correlação `e_sub.co_municipio = e.co_municipio`).
         """
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
         metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         m = dim_municipio.c
         d = dim_tp_dependencia.c
         l = dim_tp_localizacao.c
 
-        f_sub = fato_acessibilidade.alias("f_sub")
+        f_sub = fato_conectividade.alias("f_sub")
         e_sub = dim_entidade.alias("e_sub")
         d_sub = dim_tp_dependencia.alias("d_sub")
         l_sub = dim_tp_localizacao.alias("l_sub")
@@ -268,7 +251,7 @@ class AcessibilidadeRepository:
             select(func.count(f_sub.c.co_entidade))
             .select_from(denom_join)
             .where(*denom_filters)
-            .correlate(fato_acessibilidade, dim_entidade)
+            .correlate(fato_conectividade, dim_entidade)
             .scalar_subquery()
         )
 
@@ -281,7 +264,7 @@ class AcessibilidadeRepository:
         )
 
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
             .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
             .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
@@ -335,10 +318,10 @@ class AcessibilidadeRepository:
         return [(int(row.codigo), row.nome) for row in result]
 
     async def find_anos_disponiveis(self) -> list[int]:
-        """Lista de anos do censo presentes em fato_acessibilidade."""
-        return [int(v) for v in await self._find_distinct(fato_acessibilidade.c.nu_ano_censo)]
+        """Lista de anos do censo presentes em fato_conectividade."""
+        return [int(v) for v in await self._find_distinct(fato_conectividade.c.nu_ano_censo)]
 
-    # As 15 colunas de métrica de fato_score_acessibilidade vêm como Numeric com
+    # As 17 colunas de métrica de fato_score_conectividade vêm como Numeric com
     # NULL possível no banco — selecionadas via COALESCE(col, 0) para sair como 0,
     # coerente com o cálculo do score (NULL conta como 0).
     _MAPA_METRIC_COLS = tuple(METRIC_TO_FATO_COLUMN)
@@ -349,23 +332,23 @@ class AcessibilidadeRepository:
         variaveis: list[str] | None,
         pibid: bool | None = None,
     ) -> list[dict]:
-        """Lê a tabela pré-computada gold.fato_score_acessibilidade (sem joins) e
+        """Lê a tabela pré-computada gold.fato_score_conectividade (sem joins) e
         devolve list[dict] direto para a rota /mapa — score e classificação já
         vêm prontos do pipeline de dados.
 
-        - As 15 métricas saem com COALESCE(col, 0): NULL vira 0.
+        - As 17 métricas saem com COALESCE(col, 0): NULL vira 0.
         - `ano`: filtra `nu_ano_censo`.
-        - `variaveis`: AND sobre as 15 métricas gold (a escola precisa ter TODAS
-          as colunas indicadas > 0). Validado contra `VARIAVEIS_ACESSIBILIDADE_MAPA`.
+        - `variaveis`: AND sobre as 17 métricas gold (a escola precisa ter TODAS
+          as colunas indicadas > 0). Validado contra `VARIAVEIS_CONECTIVIDADE_MAPA`.
         """
-        c = fato_score_acessibilidade.c
+        c = fato_score_conectividade.c
         stmt = select(
             c.co_entidade,
             c.nu_ano_censo,
             c.pibid,
             *(func.coalesce(c[nome], 0).label(nome) for nome in self._MAPA_METRIC_COLS),
-            c.score_acessibilidade,
-            c.classificacao_acessibilidade,
+            c.score_conectividade,
+            c.classificacao_conectividade,
             c.dt_carga,
         )
 
@@ -375,7 +358,7 @@ class AcessibilidadeRepository:
             stmt = stmt.where(c.pibid == (1 if pibid else 0))
         if variaveis:
             for nome in variaveis:
-                col = VARIAVEIS_ACESSIBILIDADE_MAPA.get(nome)
+                col = VARIAVEIS_CONECTIVIDADE_MAPA.get(nome)
                 if col is None:
                     raise ValueError(f"Variável inválida: {nome!r}")
                 stmt = stmt.where(col > 0)
@@ -387,8 +370,8 @@ class AcessibilidadeRepository:
                 "nu_ano_censo": int(r["nu_ano_censo"]),
                 "pibid": int(r["pibid"]) if r["pibid"] is not None else None,
                 **{nome: float(r[nome]) for nome in self._MAPA_METRIC_COLS},
-                "score_acessibilidade": int(r["score_acessibilidade"]),
-                "classificacao_acessibilidade": r["classificacao_acessibilidade"],
+                "score_conectividade": int(r["score_conectividade"]),
+                "classificacao_conectividade": r["classificacao_conectividade"],
                 "dt_carga": (
                     r["dt_carga"].isoformat() if r["dt_carga"] is not None else None
                 ),
@@ -400,13 +383,12 @@ class AcessibilidadeRepository:
         self,
         metrica: str,
         pibid: bool | None = None,
-    ) -> list[AcessibilidadeTemporal]:
+    ) -> list[ConectividadeTemporal]:
         """Percentual da métrica por (ano, tipo de localização).
 
         Denominador é o total de entidades naquele ano + tipo de localização;
-        numerador é o total com a métrica = 1. Equivale à query original com
-        subquery, escrita aqui via agregação condicional (COUNT(CASE WHEN...))
-        para evitar a subquery correlacionada.
+        numerador é o total com a métrica = 1. Escrita via agregação condicional
+        (COUNT(CASE WHEN...)) para evitar a subquery correlacionada.
         """
         if metrica not in METRIC_TO_FATO_COLUMN:
             raise ValueError(
@@ -414,7 +396,7 @@ class AcessibilidadeRepository:
                 f"{sorted(METRIC_TO_FATO_COLUMN)}"
             )
         col = METRIC_TO_FATO_COLUMN[metrica]
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         l = dim_tp_localizacao.c
 
@@ -428,7 +410,7 @@ class AcessibilidadeRepository:
         )
 
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
             .outerjoin(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
         )
@@ -460,12 +442,7 @@ class AcessibilidadeRepository:
         return [_row_to_temporal(row) for row in result]
 
     async def _find_distinct(self, column) -> list:
-        """SELECT DISTINCT column WHERE column IS NOT NULL ORDER BY column.
-
-        Helper para listas de valores únicos de uma coluna — usado pelas
-        funções `find_*_disponiveis` que alimentam os dropdowns de filtro.
-        Não cobre o caso de múltiplas colunas (ex: município = código + nome).
-        """
+        """SELECT DISTINCT column WHERE column IS NOT NULL ORDER BY column."""
         stmt = (
             select(column)
             .where(column.is_not(None))
@@ -475,7 +452,6 @@ class AcessibilidadeRepository:
         result = await self._execute(stmt)
         return [row[0] for row in result]
 
-    #P1G4
     async def find_total_escolas(
         self,
         *,
@@ -490,25 +466,19 @@ class AcessibilidadeRepository:
         """
         Calcula a quantidade absoluta de escolas (COUNT) que satisfazem o
         predicado de `variaveis`, aplicando os filtros dinâmicos do painel.
-
-        - `combine_or=False`: escola precisa ter TODAS as variáveis = 1 (AND).
-        - `combine_or=True`: escola conta se tiver QUALQUER variável = 1 (OR).
-
-        Alimenta o card de KPI do painel geral (P1G4).
         """
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
         metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         m = dim_municipio.c
         d = dim_tp_dependencia.c
         l = dim_tp_localizacao.c
 
-        # Árvore de JOINS idêntica ao padrão do restante do arquivo
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .join(dim_entidade, f.co_entidade == e.co_entidade)
             .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
             .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
@@ -521,7 +491,6 @@ class AcessibilidadeRepository:
             .where(metric_predicate)
         )
 
-        # Aplicação dos filtros opcionais e dinâmicos do painel
         if ano is not None:
             stmt = stmt.where(f.nu_ano_censo == ano)
         if municipios:
@@ -549,17 +518,17 @@ class AcessibilidadeRepository:
     ) -> TotalEscolas:
         """
         Total absoluto de escolas no recorte (ano/município/rede/localização),
-        SEM aplicar predicado de variáveis de acessibilidade. Funciona como
-        denominador comparável ao card_total_escolas_com_acessibilidade.
+        SEM aplicar predicado de variáveis de conectividade. Funciona como
+        denominador comparável ao card_total_escolas_com_conectividade.
         """
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         m = dim_municipio.c
         d = dim_tp_dependencia.c
         l = dim_tp_localizacao.c
 
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .join(dim_entidade, f.co_entidade == e.co_entidade)
             .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
             .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
@@ -586,7 +555,6 @@ class AcessibilidadeRepository:
         row = result.first()
         return _row_to_total_escolas(row) if row else TotalEscolas(total=0)
 
-    #P1G5
     async def find_media_por_dependencia(
         self,
         *,
@@ -597,27 +565,21 @@ class AcessibilidadeRepository:
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
         pibid: bool | None = None,
-    ) -> list[AcessibilidadeDependencia]:
+    ) -> list[ConectividadeDependencia]:
         """
         Calcula o percentual de escolas que satisfazem o predicado de
-        `variaveis`, agrupado por tipo de dependência administrativa (P1G5).
-
-        - `combine_or=False`: numerador conta escolas com TODAS as
-          variáveis = 1 (AND).
-        - `combine_or=True`: numerador conta escolas com QUALQUER
-          variável = 1 (OR).
+        `variaveis`, agrupado por tipo de dependência administrativa.
         """
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
         metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         m = dim_municipio.c
         d = dim_tp_dependencia.c
         l = dim_tp_localizacao.c
 
-        # Agregação condicional
         percentual = func.round(
             (
                 func.count(case((metric_predicate, 1)))
@@ -627,9 +589,8 @@ class AcessibilidadeRepository:
             2,
         )
 
-        # Joins necessários para cruzar os dados com a dimensão de dependência
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .join(dim_entidade, f.co_entidade == e.co_entidade)
             .join(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
             .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
@@ -647,7 +608,6 @@ class AcessibilidadeRepository:
             .group_by(d.co_tp_dependencia, d.no_tp_dependencia)
         )
 
-        # Filtros dinâmicos herdados globalmente do painel
         if ano is not None:
             stmt = stmt.where(f.nu_ano_censo == ano)
         if municipios:
@@ -672,21 +632,16 @@ class AcessibilidadeRepository:
         rede_ensino: list[str] | None = None,
         tp_localizacao: list[str] | None = None,
         pibid: bool | None = None,
-    ) -> list[AcessibilidadeLocalizacao]:
+    ) -> list[ConectividadeLocalizacao]:
         """
         Calcula o percentual de escolas que satisfazem o predicado de
         `variaveis`, agrupado por tipo de localização (Urbana/Rural).
-
-        - `combine_or=False`: numerador conta escolas com TODAS as
-          variáveis = 1 (AND).
-        - `combine_or=True`: numerador conta escolas com QUALQUER
-          variável = 1 (OR).
         """
         if not variaveis:
             raise ValueError("É necessário passar ao menos uma variável para o painel")
         metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         m = dim_municipio.c
         d = dim_tp_dependencia.c
@@ -702,7 +657,7 @@ class AcessibilidadeRepository:
         )
 
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .join(dim_entidade, f.co_entidade == e.co_entidade)
             .join(dim_tp_localizacao, e.tp_localizacao == l.co_tp_localizacao)
             .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
@@ -738,7 +693,7 @@ class AcessibilidadeRepository:
     def _build_metricas_escola_subquery(
         self,
         *,
-        variaveis: list[str],
+        variaveis: list[str] | None,
         combine_or: bool,
         ano: int | None,
         municipios: list[str] | None,
@@ -747,22 +702,19 @@ class AcessibilidadeRepository:
         pibid: bool | None = None,
     ):
         """Subquery base do gráfico de métricas por escola: uma linha por
-        (escola, censo) com as 15 métricas (binarizadas em 0/1), o score (0–15) e
+        (escola, censo) com as 17 métricas (binarizadas em 0/1), o score (0–17) e
         o `rn` (row_number por escola, censo DESC) para dedup do censo mais
         recente. Compartilhada por `find_metricas_por_escola` (lista paginada) e
         `count_metricas_por_escola` (total para a paginação)."""
-        if not variaveis:
-            raise ValueError("É necessário passar ao menos uma variável para o painel")
-        metric_predicate = _build_metric_predicate(variaveis, combine_or)
 
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         m = dim_municipio.c
         d = dim_tp_dependencia.c
         l = dim_tp_localizacao.c
 
-        # Binário uniforme (qt_*/tp_aee viram 0/1 via > 0). Cada métrica conta 1 no
-        # score, mantendo o intervalo 0–15.
+        # Binário uniforme (qt_*/tp_rede_local viram 0/1 via > 0). Cada métrica
+        # conta 1 no score, mantendo o intervalo 0–17.
         def binario(col):
             return case((col > 0, 1), else_=0)
 
@@ -773,8 +725,6 @@ class AcessibilidadeRepository:
             (binario(col) for col in METRIC_TO_FATO_COLUMN.values()),
             literal(0),
         )
-        # Dedup para o censo mais recente de cada escola: sem filtro de ano,
-        # uma escola aparece em vários censos — fica apenas a linha rn == 1.
         rn = (
             func.row_number()
             .over(partition_by=e.co_entidade, order_by=f.nu_ano_censo.desc())
@@ -782,7 +732,7 @@ class AcessibilidadeRepository:
         )
 
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .join(dim_entidade, f.co_entidade == e.co_entidade)
             .outerjoin(dim_municipio, e.co_municipio == m.co_municipio)
             .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
@@ -799,8 +749,13 @@ class AcessibilidadeRepository:
                 rn,
             )
             .select_from(join_tree)
-            .where(metric_predicate, e.no_entidade.is_not(None))
+            .where(e.no_entidade.is_not(None))
         )
+
+        # Aplica-se o filtro de métricas apenas se o utilizador enviou variáveis
+        if variaveis:
+            metric_predicate = _build_metric_predicate(variaveis, combine_or)
+            base = base.where(metric_predicate)
 
         if ano is not None:
             base = base.where(f.nu_ano_censo == ano)
@@ -827,17 +782,13 @@ class AcessibilidadeRepository:
         pibid: bool | None = None,
         limit: int | None = None,
         offset: int | None = None,
-    ) -> list[AcessibilidadeEscola]:
+    ) -> list[ConectividadeEscola]:
         """
-        Lista escolas com o valor (0/1) de cada uma das 15 métricas de
-        acessibilidade e o score (soma das 15), aplicando a mesma regra de
+        Lista escolas com o valor (0/1) de cada uma das 17 métricas de
+        conectividade e o score (soma das 17), aplicando a mesma regra de
         filtro dos demais gráficos do painel.
 
-        - `combine_or=False`: escola entra se tiver TODAS as variáveis = 1 (AND).
-        - `combine_or=True`: escola entra se tiver QUALQUER variável = 1 (OR;
-          usado quando o filtro de variáveis chega vazio).
-        - Sem `ano`: dedup para o censo mais recente de cada escola
-          (row_number por co_entidade, nu_ano_censo DESC).
+        - Sem `ano`: dedup para o censo mais recente de cada escola.
         - `limit`/`offset`: usados pelo painel para paginar o gráfico por escola
           (ordenado por score DESC). Use `count_metricas_por_escola` para o total.
         """
@@ -889,27 +840,20 @@ class AcessibilidadeRepository:
         total = await self._scalar(stmt)
         return int(total or 0)
 
-    #P1G6
     async def find_evolucao_por_dependencia(
         self,
         metrica: str,
         pibid: bool | None = None,
-    ) -> list[AcessibilidadeTemporalDependencia]:
+    ) -> list[ConectividadeTemporalDependencia]:
         """Percentual da métrica por (ano censo, tipo de dependência
-        administrativa).
-
-        Equivale à query original com subquery correlacionada, reescrita
-        aqui via agregação condicional (COUNT(CASE WHEN...)) seguindo o
-        mesmo padrão de find_evolucao_por_localizacao — generalizada
-        para qualquer métrica do whitelist.
-        """
+        administrativa). Via agregação condicional (COUNT(CASE WHEN...))."""
         if metrica not in METRIC_TO_FATO_COLUMN:
             raise ValueError(
                 f"Métrica inválida: {metrica!r}. Esperado uma de: "
                 f"{sorted(METRIC_TO_FATO_COLUMN)}"
             )
         col = METRIC_TO_FATO_COLUMN[metrica]
-        f = fato_acessibilidade.c
+        f = fato_conectividade.c
         e = dim_entidade.c
         d = dim_tp_dependencia.c
 
@@ -923,7 +867,7 @@ class AcessibilidadeRepository:
         )
 
         join_tree = (
-            fato_acessibilidade
+            fato_conectividade
             .outerjoin(dim_entidade, f.co_entidade == e.co_entidade)
             .outerjoin(dim_tp_dependencia, e.tp_dependencia == d.co_tp_dependencia)
         )
@@ -954,7 +898,6 @@ class AcessibilidadeRepository:
         result = await self._execute(stmt)
         return [_row_to_temporal_dependencia(row) for row in result]
 
-
     async def find_ideb_por_entidades(
         self,
         entidades: list[int],
@@ -962,7 +905,7 @@ class AcessibilidadeRepository:
         """
         Retorna {co_entidade: {"iniciais": ..., "finais": ..., "medio": ...}}
         para cada escola, lendo a coluna de ano fixo (`IDEB_YEAR_COLUMN`) em cada
-        uma das três etapas do gold, igual ao notebook (cell-10, ANO_IDEB=2023).
+        uma das três etapas do gold, igual ao notebook (cell-12, ANO_IDEB=2023).
         """
         if not entidades:
             return {}
@@ -998,7 +941,7 @@ class AcessibilidadeRepository:
         Retorna {co_entidade: {"subprojetos": str|None, "bolsistas": int|None}}
         para cada escola, lendo gold.fato_pibid. A tabela gold não tem coluna de
         ano: agrega por escola numa única query (STRING_AGG distinto dos
-        subprojetos + MAX de bolsistas ativos), igual ao notebook (cell-10).
+        subprojetos + MAX de bolsistas ativos), igual ao notebook (cell-12).
         """
         if not entidades:
             return {}

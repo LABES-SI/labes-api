@@ -4,39 +4,42 @@ import json
 import pandas as pd
 import plotly.graph_objects as go
 
-from app.domain.acessibilidade import (
-    AcessibilidadeEscola,
-    AcessibilidadeLocalizacao,
-    AcessibilidadeMunicipio,
-    AcessibilidadeTemporal,
+from app.domain.conectividade import (
+    ConectividadeDependencia,
+    ConectividadeEscola,
+    ConectividadeLocalizacao,
+    ConectividadeMunicipio,
+    ConectividadeTemporal,
+    ConectividadeTemporalDependencia,
     TotalEscolas,
-    AcessibilidadeDependencia,
-    AcessibilidadeTemporalDependencia,
 )
-from app.repositories.acessibilidade_repository import AcessibilidadeRepository
+from app.repositories.conectividade_repository import ConectividadeRepository
 from app.services.chart_factory import ChartFactory
 
 
-# (chave, rótulo, cor, grupo) — fonte única das 15 métricas do notebook (cell-10):
-# define ordem, cores e agrupamento da legenda (Infraestrutura × Profissionais) do
-# gráfico de métricas por escola. METRIC_FIELDS é derivado daqui para alimentar o
-# catálogo de filtros e a validação de variáveis.
+# (chave, rótulo, cor, grupo) — fonte única das 17 métricas do notebook (cell-12):
+# define ordem, cores e agrupamento da legenda do gráfico de métricas por escola.
+# Todas as métricas de conectividade pertencem ao grupo "Infraestrutura".
+# METRIC_FIELDS é derivado daqui para alimentar o catálogo de filtros e a
+# validação de variáveis.
 METRIC_ESCOLA_FIELDS: list[tuple[str, str, str, str]] = [
-    ("in_acessibilidade_rampas",        "Rampas",                       "#54A24B", "Infraestrutura"),
-    ("in_acessibilidade_corrimao",      "Corrimão",                     "#E45756", "Infraestrutura"),
-    ("in_acessibilidade_elevador",      "Elevador",                     "#72B7B2", "Infraestrutura"),
-    ("in_acessibilidade_pisos_tateis",  "Pisos táteis",                 "#EECA3B", "Infraestrutura"),
-    ("in_acessibilidade_vao_livre",     "Vão livre",                    "#B279A2", "Infraestrutura"),
-    ("qt_salas_utilizadas_acessiveis",  "Salas acessíveis",             "#FF9DA6", "Infraestrutura"),
-    ("in_acessibilidade_inexistente",   "Outros",                       "#444444", "Infraestrutura"),
-    ("in_acessibilidade_sinal_tatil",   "Sinal tátil",                  "#1F77B4", "Infraestrutura"),
-    ("in_acessibilidade_sinal_sonoro",  "Sinal sonoro",                 "#9D755D", "Infraestrutura"),
-    ("in_acessibilidade_sinal_visual",  "Sinal visual",                 "#FF9DA6", "Infraestrutura"),
-    ("tp_aee",                          "AEE",                          "#D67195", "Infraestrutura"),
-    ("in_sala_atendimento_especial",    "Sala de atendimento especial", "#4C78A8", "Infraestrutura"),
-    ("in_reserva_pcd",                  "Reserva PCD",                  "#F58518", "Infraestrutura"),
-    ("qt_prof_psicologo",               "Psicólogo",                    "#5254A3", "Profissionais"),
-    ("qt_prof_assist_social",           "Assistente social",            "#843C39", "Profissionais"),
+    ("in_internet",                    "Conexão à Internet",               "#1f77b4", "Infraestrutura"),
+    ("in_internet_alunos",             "Internet - Alunos",                "#ff7f0e", "Infraestrutura"),
+    ("in_internet_administrativo",     "Internet - Administrativo",        "#2ca02c", "Infraestrutura"),
+    ("in_internet_aprendizagem",       "Internet - Aprendizagem",          "#d62728", "Infraestrutura"),
+    ("in_internet_comunidade",         "Internet - Comunidade",            "#9467bd", "Infraestrutura"),
+    ("in_banda_larga",                 "Banda Larga",                      "#8c564b", "Infraestrutura"),
+    ("in_acesso_internet_computador",  "Acesso por Computador",            "#e377c2", "Infraestrutura"),
+    ("in_aces_internet_disp_pessoais", "Acesso por Dispositivos Pessoais", "#7f7f7f", "Infraestrutura"),
+    ("tp_rede_local",                  "Tipo de Rede Local",               "#bcbd22", "Infraestrutura"),
+    ("in_computador",                  "Computador",                       "#17becf", "Infraestrutura"),
+    ("in_desktop_aluno",               "Desktop - Aluno",                  "#aec7e8", "Infraestrutura"),
+    ("qt_desktop_aluno",               "Qtd. Desktops - Aluno",            "#ffbb78", "Infraestrutura"),
+    ("in_comp_portatil_aluno",         "Comp. Portátil - Aluno",           "#98df8a", "Infraestrutura"),
+    ("qt_comp_portatil_aluno",         "Qtd. Comp. Portáteis - Aluno",     "#ff9896", "Infraestrutura"),
+    ("in_tablet_aluno",                "Tablet - Aluno",                   "#c5b0d5", "Infraestrutura"),
+    ("qt_tablet_aluno",                "Qtd. Tablets - Aluno",             "#c49c94", "Infraestrutura"),
+    ("in_redes_sociais",               "Redes Sociais",                    "#f7b6d2", "Infraestrutura"),
 ]
 COR_AUSENTE = "#E5E5E5"
 
@@ -48,9 +51,9 @@ METRIC_FIELDS: list[tuple[str, str]] = [
 
 METRICS_BY_KEY: dict[str, str] = {key: label for key, label in METRIC_FIELDS}
 
-PAINEL_DESCRICAO = "painel_acessibilidade"
-MAPA_DESCRICAO = "mapa_acessibilidade"
-ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_acessibilidade"
+PAINEL_DESCRICAO = "painel_conectividade"
+MAPA_DESCRICAO = "mapa_conectividade"
+ANALISE_TEMPORAL_DESCRICAO = "analise_temporal_conectividade"
 TAB_PERCENT_ROW_HEIGHT_PX = 42
 TAB_PERCENT_HEADER_PX = 130
 TAB_PERCENT_VISIBLE_ROWS = 5
@@ -59,10 +62,10 @@ TAB_PERCENT_VISIBLE_ROWS = 5
 PAINEL_ESCOLAS_PAGE_SIZE = 5
 
 
-class AcessibilidadeService:
-    """Serviço de acessibilidade: monta painéis, mapas e gráficos de evolução temporal."""
+class ConectividadeService:
+    """Serviço de conectividade: monta painéis, mapas e gráficos de evolução temporal."""
 
-    def __init__(self, repository: AcessibilidadeRepository):
+    def __init__(self, repository: ConectividadeRepository):
         self._repository = repository
 
     @staticmethod
@@ -79,23 +82,22 @@ class AcessibilidadeService:
         variaveis: list[str] | None = None,
         pibid: bool | None = None,
     ) -> dict:
-        """Monta o painel de acessibilidade: gráfico + opções de filtro.
+        """Monta o painel de conectividade: gráficos + cards.
 
         - Sem `municipios`: o tab_percent cobre todos os municípios do recorte.
         - Sem `ano`: agrega em todos os censos.
         - `variaveis`: define quais indicadores entram no recorte.
-          • Sem filtro (None/vazio): usa OR sobre TODAS as 15 variáveis —
+          • Sem filtro (None/vazio): usa OR sobre TODAS as 17 variáveis —
             escola conta se tiver QUALQUER variável = 1.
           • Com filtro: usa AND — escola precisa ter TODAS as variáveis = 1.
-        - `rede_ensino`/`tp_localizacao` restringem a população (aplicam
-          aos numerador e denominador).
+        - `rede_ensino`/`tp_localizacao` restringem a população.
         """
         variaveis, combine_or = self._resolver_variaveis(variaveis)
 
         # Paralelizar queries independentes com asyncio.gather()
         (
             records,
-            total_escolas_com_acessibilidade_record,
+            total_escolas_com_conectividade_record,
             total_escolas_geral_record,
             dep_records,
             loc_records,
@@ -153,8 +155,8 @@ class AcessibilidadeService:
             total_escolas_geral_record,
             titulo=f"Total de Escolas — {recorte}",
         )
-        card_total_escolas_com_acessibilidade = self._build_total_escolas_card(
-            total_escolas_com_acessibilidade_record,
+        card_total_escolas_com_conectividade = self._build_total_escolas_card(
+            total_escolas_com_conectividade_record,
             titulo=f"Total de Escolas com {label_filtro} — {recorte}",
         )
 
@@ -170,10 +172,10 @@ class AcessibilidadeService:
             "data": {
                 "graficos": {
                     "card_total_escolas": card_total_escolas,
-                    "card_total_escolas_com_acessibilidade": card_total_escolas_com_acessibilidade,
-                    "tab_percent_acessibilidade": tab_percent,
-                    "grafico_dependencia_acessibilidade": grafico_dependencia,
-                    "grafico_tp_localizacao_acessibilidade": grafico_tp_localizacao,
+                    "card_total_escolas_com_conectividade": card_total_escolas_com_conectividade,
+                    "tab_percent_conectividade": tab_percent,
+                    "grafico_dependencia_conectividade": grafico_dependencia,
+                    "grafico_tp_localizacao_conectividade": grafico_tp_localizacao,
                 },
             },
         }
@@ -192,15 +194,17 @@ class AcessibilidadeService:
         """Uma página do gráfico de métricas por escola (barras empilhadas),
         ordenado por score DESC e com os mesmos filtros do painel.
 
-        Retorna `{"grafico": <envelope>, "paginacao": {...}}`. O front usa a
-        paginação para navegar as demais escolas batendo só neste caminho leve,
-        sem reprocessar o painel inteiro a cada virada de página.
+        Retorna `{"grafico": <envelope>, "paginacao": {...}}`.
         """
-        variaveis_efetivas, combine_or = self._resolver_variaveis(variaveis)
+
+        if variaveis:
+            for v in variaveis:
+                if v not in METRICS_BY_KEY:
+                    raise ValueError(f"Variável inválida: {v!r}")
 
         total_escolas = await self._repository.count_metricas_por_escola(
-            variaveis=variaveis_efetivas,
-            combine_or=combine_or,
+            variaveis=variaveis,
+            combine_or=False, # Se tem filtro de variáveis explícito, a regra é AND
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -209,8 +213,8 @@ class AcessibilidadeService:
         )
 
         records = await self._repository.find_metricas_por_escola(
-            variaveis=variaveis_efetivas,
-            combine_or=combine_or,
+            variaveis=variaveis,
+            combine_or=False,
             ano=ano,
             municipios=municipios,
             rede_ensino=rede_ensino,
@@ -229,7 +233,13 @@ class AcessibilidadeService:
         )
         inicio = page * page_size
 
-        label = self._filtro_variaveis_label(variaveis_efetivas, combine_or)
+        # Ajuste dinâmico do título para fazer sentido sem filtros
+        if variaveis:
+            label = self._filtro_variaveis_label(variaveis, False)
+            titulo_base = f"Métricas de conectividade por escola com {label}"
+        else:
+            titulo_base = "Métricas de conectividade por escola"
+
         recorte = self._recorte_escola_label(ano, records)
         sufixo_municipio = (
             f" {self._municipios_label(municipios)}" if municipios else ""
@@ -239,10 +249,8 @@ class AcessibilidadeService:
             if records
             else "  |  0 escolas"
         )
-        titulo = (
-            f"Métricas de acessibilidade por escola com {label}"
-            f"{sufixo_municipio} — {recorte}{intervalo}"
-        )
+        titulo = f"{titulo_base}{sufixo_municipio} — {recorte}{intervalo}"
+        
         figure = self._build_metricas_por_escola_figure(
             records, titulo, ideb_map, pibid_map
         )
@@ -266,7 +274,7 @@ class AcessibilidadeService:
         variaveis: list[str] | None,
         pibid: bool | None = None,
     ) -> dict:
-        """Lista as linhas de gold.fato_score_acessibilidade (score e
+        """Lista as linhas de gold.fato_score_conectividade (score e
         classificação pré-computados). Sem transformação extra — apenas
         envelopa a saída do repository."""
         pontos = await self._repository.find_pontos_mapa_raw(
@@ -286,9 +294,9 @@ class AcessibilidadeService:
     ) -> dict:
         """Monta os gráficos de evolução temporal: por tipo de localização
         (urbana/rural) e por tipo de dependência administrativa
-        (Federal/Estadual/Municipal/Privada, P1G6). Ambos parametrizados
-        pela mesma `metrica`, com eixo X = ano censo e eixo Y = percentual
-        de escolas com a métrica = 1.
+        (Federal/Estadual/Municipal/Privada). Ambos parametrizados pela mesma
+        `metrica`, com eixo X = ano censo e eixo Y = percentual de escolas com
+        a métrica = 1.
         """
         if metrica not in METRICS_BY_KEY:
             raise ValueError(
@@ -300,7 +308,6 @@ class AcessibilidadeService:
             pibid=pibid,
         )
         grafico = self._build_evolucao_temporal(records, metrica)
-
 
         dep_records = await self._repository.find_evolucao_por_dependencia(
             metrica=metrica,
@@ -328,7 +335,7 @@ class AcessibilidadeService:
     def _resolver_variaveis(variaveis: list[str] | None) -> tuple[list[str], bool]:
         """Normaliza o filtro de variáveis do painel.
 
-        - Vazio/None → OR sobre TODAS as 15 variáveis (escola conta com
+        - Vazio/None → OR sobre TODAS as 17 variáveis (escola conta com
           QUALQUER variável = 1).
         - Preenchido → AND, validando cada chave contra a whitelist.
 
@@ -347,10 +354,10 @@ class AcessibilidadeService:
     @staticmethod
     def _filtro_variaveis_label(variaveis: list[str], combine_or: bool) -> str:
         if combine_or:
-            return "qualquer recurso de acessibilidade"
+            return "qualquer recurso de conectividade"
         if len(variaveis) == 1:
             return METRICS_BY_KEY.get(variaveis[0], variaveis[0])
-        return "múltiplos recursos de acessibilidade selecionados"
+        return "múltiplos recursos de conectividade selecionados"
 
     @staticmethod
     def _recorte_temporal_label(ano: int | None) -> str:
@@ -358,8 +365,7 @@ class AcessibilidadeService:
 
     @staticmethod
     def _municipios_label(municipios: list[str]) -> str:
-        """Trecho de município (já com preposição) para o título. Nome do
-        município quando houver só um; texto genérico quando houver vários."""
+        """Trecho de município (já com preposição) para o título."""
         if len(municipios) == 1:
             return f"em {municipios[0]}"
         return "nos municípios selecionados"
@@ -367,12 +373,11 @@ class AcessibilidadeService:
     @staticmethod
     def _recorte_escola_label(
         ano: int | None,
-        records: list[AcessibilidadeEscola],
+        records: list[ConectividadeEscola],
     ) -> str:
         """Rótulo temporal do gráfico por escola. Sem filtro de `ano`, cada
         escola usa o seu censo mais recente — então o rótulo mostra o(s)
-        ano(s) realmente exibido(s) em vez de 'Todos os censos' (que
-        confundiria)."""
+        ano(s) realmente exibido(s)."""
         if ano is not None:
             return f"Censo {ano}"
         anos = sorted({r.nu_ano_censo for r in records})
@@ -384,7 +389,7 @@ class AcessibilidadeService:
 
     def _build_tab_percent(
         self,
-        records: list[AcessibilidadeMunicipio],
+        records: list[ConectividadeMunicipio],
         ano: int | None,
         variaveis: list[str],
         combine_or: bool = False,
@@ -408,7 +413,7 @@ class AcessibilidadeService:
 
     def _build_evolucao_temporal(
         self,
-        records: list[AcessibilidadeTemporal],
+        records: list[ConectividadeTemporal],
         metrica: str,
     ) -> dict:
         label = METRICS_BY_KEY[metrica]
@@ -424,11 +429,11 @@ class AcessibilidadeService:
         }
 
     # ========================================================================
-    # DATAFRAME BUILDERS - Conversão de registros para DataFrames (Pandas)
+    # DATAFRAME BUILDERS
     # ========================================================================
 
     @staticmethod
-    def _records_to_dataframe(records: list[AcessibilidadeMunicipio]) -> pd.DataFrame:
+    def _records_to_dataframe(records: list[ConectividadeMunicipio]) -> pd.DataFrame:
         rows = [
             {
                 "municipio": r.municipio,
@@ -440,7 +445,7 @@ class AcessibilidadeService:
         return pd.DataFrame(rows)
 
     @staticmethod
-    def _temporal_to_dataframe(records: list[AcessibilidadeTemporal]) -> pd.DataFrame:
+    def _temporal_to_dataframe(records: list[ConectividadeTemporal]) -> pd.DataFrame:
         rows = [
             {
                 "ano": r.ano,
@@ -452,43 +457,41 @@ class AcessibilidadeService:
         return pd.DataFrame(rows)
 
     # ========================================================================
-    # FIGURE BUILDERS - Renderização Plotly para gráficos
+    # FIGURE BUILDERS
     # ========================================================================
 
     @staticmethod
     def _build_tab_percent_figure(
-       df: pd.DataFrame,
-       metrica: str,
-       titulo: str,
+        df: pd.DataFrame,
+        metrica: str,
+        titulo: str,
     ) -> go.Figure:
-       if df.empty:
-           return ChartFactory.bar_chart_horizontal([], [], titulo)
-        
-       values = df[metrica].tolist()
-       municipios = df["municipio"].tolist()
-       totais = df["total_escolas"].tolist()
-        
-       fig = ChartFactory.bar_chart_horizontal(
-           y_data=municipios,
-           x_data=values,
-           titulo=titulo,
-           customdata=totais,
-           x_axis_range=(0, 100),
-       )
-        
-       n_rows = len(df)
-       figure_height = TAB_PERCENT_HEADER_PX + TAB_PERCENT_ROW_HEIGHT_PX * max(
-           n_rows, 1
-       )
-       # Customizações específicas para este gráfico
-       fig.update_layout(
-           yaxis=dict(title="Lista de municípios"),
-           margin=dict(l=160, r=40, t=60, b=40),
-           height=figure_height,
-       )
-       return fig
+        if df.empty:
+            return ChartFactory.bar_chart_horizontal([], [], titulo)
 
-    @staticmethod
+        values = df[metrica].tolist()
+        municipios = df["municipio"].tolist()
+        totais = df["total_escolas"].tolist()
+
+        fig = ChartFactory.bar_chart_horizontal(
+            y_data=municipios,
+            x_data=values,
+            titulo=titulo,
+            customdata=totais,
+            x_axis_range=(0, 100),
+        )
+
+        n_rows = len(df)
+        figure_height = TAB_PERCENT_HEADER_PX + TAB_PERCENT_ROW_HEIGHT_PX * max(
+            n_rows, 1
+        )
+        fig.update_layout(
+            yaxis=dict(title="Lista de municípios"),
+            margin=dict(l=160, r=40, t=60, b=40),
+            height=figure_height,
+        )
+        return fig
+
     @staticmethod
     def _build_evolucao_temporal_figure(
         df: pd.DataFrame,
@@ -496,23 +499,23 @@ class AcessibilidadeService:
     ) -> go.Figure:
         if df.empty:
             return ChartFactory.line_chart([], {}, titulo)
-        
+
         # Agrupa dados por localização para criar série temporal
         y_data_series = {}
         for localizacao in df["localizacao"].unique():
             df_loc = df[df["localizacao"] == localizacao]
             y_data_series[localizacao] = df_loc["percentual"].tolist()
-        
+
         x_data = df["ano"].unique().tolist()
         x_data.sort()
-        
+
         return ChartFactory.line_chart(
             x_data=x_data,
             y_data_series=y_data_series,
             titulo=titulo,
-            y_axis_title="Percentual de acessibilidade",
+            y_axis_title="Percentual de conectividade",
         )
-    
+
     def _build_total_escolas_card(
         self,
         total_record: TotalEscolas,
@@ -521,7 +524,7 @@ class AcessibilidadeService:
         """Envelopa a figura do indicador no formato esperado pelo contrato da API"""
         figure = self._build_total_escolas_figure(total_record.total, titulo)
 
-        return{
+        return {
             "tipo": "indicator",
             "titulo": titulo,
             "plotly": self._figure_to_plotly_dict(figure),
@@ -535,15 +538,15 @@ class AcessibilidadeService:
             titulo=titulo,
             font_size=60,
         )
-    
+
     def _build_dependencia_chart(
         self,
-        records: list[AcessibilidadeDependencia],
+        records: list[ConectividadeDependencia],
         variaveis: list[str],
         combine_or: bool,
         ano: int | None,
     ) -> dict:
-        """Estrutura o envelope JSON do gráfico de dependência administrativa (P1G5)."""
+        """Estrutura o envelope JSON do gráfico de dependência administrativa."""
         sorted_records = sorted(records, key=lambda x: x.percentual, reverse=True)
 
         x_data = [r.dependencia for r in sorted_records]
@@ -558,7 +561,7 @@ class AcessibilidadeService:
             f"administrativa — {recorte}"
         )
         figure = self._build_dependencia_figure(x_data, y_data, totais_escolas, titulo)
-        
+
         return {
             "tipo": "bar",
             "titulo": titulo,
@@ -583,7 +586,7 @@ class AcessibilidadeService:
 
     def _build_localizacao_chart(
         self,
-        records: list[AcessibilidadeLocalizacao],
+        records: list[ConectividadeLocalizacao],
         variaveis: list[str],
         combine_or: bool,
         ano: int | None,
@@ -628,7 +631,7 @@ class AcessibilidadeService:
 
     @staticmethod
     def _build_metricas_por_escola_figure(
-        records: list[AcessibilidadeEscola],
+        records: list[ConectividadeEscola],
         titulo: str,
         ideb_map: dict[int, dict[str, float | None]],
         pibid_map: dict[int, dict[str, object]],
@@ -636,9 +639,9 @@ class AcessibilidadeService:
         """Uma barra horizontal empilhada por escola: cada métrica é um slot de
         largura 1, colorido se a escola possui (=1) ou cinza se não. Hover traz
         PIBID (subprojeto + bolsistas ativos) e IDEB (anos iniciais/finais/
-        ensino médio). Legenda manual agrupada (Infraestrutura × Profissionais)
-        e anotação n/15 ao final de cada barra. Os registros chegam ordenados
-        por score DESC; o eixo Y é invertido para o maior score ficar no topo."""
+        ensino médio). Legenda manual agrupada e anotação n/17 ao final de cada
+        barra. Os registros chegam ordenados por score DESC; o eixo Y é invertido
+        para o maior score ficar no topo."""
         fig = go.Figure()
         escolas = [r.no_entidade for r in records]
         n = len(records)
@@ -659,12 +662,14 @@ class AcessibilidadeService:
                 if notas.get(chave) is not None
             ]
             ideb_texto = "<br>".join(ideb_partes) if ideb_partes else "sem registro"
-            
+
             # PIBID
             pibid_data = pibid_map.get(r.co_entidade, {})
-            subprojeto = pibid_data.get("subprojetos", "Sem registro")
-            bolsistas = pibid_data.get("bolsistas", "—")
-            
+            # O "or" garante que se o banco devolver None ou string vazia, ele aplica a mensagem
+            subprojeto = pibid_data.get("subprojetos") or "Sem registro"
+            bolsistas_raw = pibid_data.get("bolsistas")
+            bolsistas = str(bolsistas_raw) if bolsistas_raw is not None else "—"
+
             cached_data.append({
                 "nu_ano_censo": r.nu_ano_censo,
                 "subprojeto": subprojeto,
@@ -688,7 +693,7 @@ class AcessibilidadeService:
                     cached["bolsistas"],
                     cached["ideb_texto"],
                 ])
-            
+
             fig.add_trace(
                 go.Bar(
                     y=escolas,
@@ -760,7 +765,7 @@ class AcessibilidadeService:
 
     @staticmethod
     def _temporal_dependencia_to_dataframe(
-        records: list[AcessibilidadeTemporalDependencia],
+        records: list[ConectividadeTemporalDependencia],
     ) -> pd.DataFrame:
         rows = [
             {
@@ -774,7 +779,7 @@ class AcessibilidadeService:
 
     def _build_evolucao_temporal_dependencia(
         self,
-        records: list[AcessibilidadeTemporalDependencia],
+        records: list[ConectividadeTemporalDependencia],
         metrica: str,
     ) -> dict:
         label = METRICS_BY_KEY[metrica]
@@ -798,19 +803,19 @@ class AcessibilidadeService:
     ) -> go.Figure:
         if df.empty:
             return ChartFactory.line_chart([], {}, titulo)
-        
+
         # Agrupa dados por dependência para criar série temporal
         y_data_series = {}
         for dependencia in df["dependencia"].unique():
             df_dep = df[df["dependencia"] == dependencia]
             y_data_series[dependencia] = df_dep["percentual"].tolist()
-        
+
         x_data = df["ano"].unique().tolist()
         x_data.sort()
-        
+
         return ChartFactory.line_chart(
             x_data=x_data,
             y_data_series=y_data_series,
             titulo=titulo,
-            y_axis_title="Percentual de Acessibilidade",
+            y_axis_title="Percentual de Conectividade",
         )

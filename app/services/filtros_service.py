@@ -4,6 +4,7 @@ from enum import Enum
 from app.core.exceptions import NotFoundError
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 from app.services.acessibilidade_service import METRIC_FIELDS
+from app.services.conectividade_service import METRIC_FIELDS as CONECTIVIDADE_METRIC_FIELDS
 
 REDES_ENSINO: list[str] = ["Federal", "Estadual", "Municipal", "Privada"]
 TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
@@ -14,6 +15,7 @@ TIPOS_LOCALIZACAO: list[str] = ["Urbana", "Rural"]
 # e passam a ser servidos por GET /filtros?painel=<nome> sem editar a rota.
 PAINEL_METRICAS: dict[str, list[tuple[str, str]]] = {
     "acessibilidade": METRIC_FIELDS,
+    "conectividade": CONECTIVIDADE_METRIC_FIELDS,
 }
 
 # Enum derivado do registry para que o parâmetro ?painel vire um dropdown no

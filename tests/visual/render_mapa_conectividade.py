@@ -1,18 +1,18 @@
-"""Confere o pipeline do /acessibilidade/mapa contra a query bruta do notebook.
+"""Confere o pipeline do /conectividade/mapa contra a query bruta do notebook.
 
-O /mapa agora lê direto de gold.fato_score_acessibilidade (score e classificação
+O /mapa lê direto de gold.fato_score_conectividade (score e classificação
 pré-computados). Este script executa dois caminhos contra o warehouse e bate os
 DataFrames:
 
-1. Pipeline: AcessibilidadeRepository.find_pontos_mapa_raw -> DataFrame.
-2. Query bruta do notebook: SELECT * FROM gold.fato_score_acessibilidade.
+1. Pipeline: ConectividadeRepository.find_pontos_mapa_raw -> DataFrame.
+2. Query bruta do notebook: SELECT * FROM gold.fato_score_conectividade.
 
 Imprime diferenças de shape, contagem por classificação e se batem linha-a-linha.
 Salva ambos em tests/visual/out/ como CSV para inspeção.
 
 Uso:
-    uv run python -m tests.visual.render_mapa
-    uv run python -m tests.visual.render_mapa --ano 2024
+    uv run python -m tests.visual.render_mapa_conectividade
+    uv run python -m tests.visual.render_mapa_conectividade --ano 2024
 """
 
 import argparse
@@ -23,14 +23,14 @@ import pandas as pd
 from sqlalchemy import text
 
 from app.core.dependencies import SessionLocal, async_engine
-from app.repositories.acessibilidade_repository import AcessibilidadeRepository
+from app.repositories.conectividade_repository import ConectividadeRepository
 
 
-QUERY_MAPA = "SELECT * FROM gold.fato_score_acessibilidade"
+QUERY_MAPA = "SELECT * FROM gold.fato_score_conectividade"
 
 
 async def _df_pipeline(ano: int | None) -> pd.DataFrame:
-    repo = AcessibilidadeRepository(SessionLocal, semaphore=None)
+    repo = ConectividadeRepository(SessionLocal, semaphore=None)
     pontos = await repo.find_pontos_mapa_raw(ano=ano, variaveis=None)
     return pd.DataFrame(pontos)
 
@@ -54,17 +54,17 @@ async def _run(ano: int | None) -> None:
 
     out_dir = Path(__file__).parent / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
-    pipeline_df.to_csv(out_dir / "mapa_pipeline.csv", index=False)
-    bruta_df.to_csv(out_dir / "mapa_query_bruta.csv", index=False)
+    pipeline_df.to_csv(out_dir / "mapa_conectividade_pipeline.csv", index=False)
+    bruta_df.to_csv(out_dir / "mapa_conectividade_query_bruta.csv", index=False)
 
     print(f"Linhas pipeline:    {len(pipeline_df)}")
     print(f"Linhas query bruta: {len(bruta_df)}")
     print()
     print("Classificação (pipeline):")
-    print(pipeline_df["classificacao_acessibilidade"].value_counts().to_string())
+    print(pipeline_df["classificacao_conectividade"].value_counts().to_string())
     print()
     print("Classificação (query bruta):")
-    print(bruta_df["classificacao_acessibilidade"].value_counts().to_string())
+    print(bruta_df["classificacao_conectividade"].value_counts().to_string())
     print()
 
     if pipeline_df.shape != bruta_df.shape:
@@ -72,8 +72,8 @@ async def _run(ano: int | None) -> None:
     else:
         a = pipeline_df.sort_values("co_entidade", kind="mergesort").reset_index(drop=True)
         b = bruta_df.sort_values("co_entidade", kind="mergesort").reset_index(drop=True)
-        cols = [c for c in ("co_entidade", "nu_ano_censo", "score_acessibilidade",
-                            "classificacao_acessibilidade") if c in a.columns and c in b.columns]
+        cols = [c for c in ("co_entidade", "nu_ano_censo", "score_conectividade",
+                            "classificacao_conectividade") if c in a.columns and c in b.columns]
         iguais = a[cols].equals(b[cols])
         print(f"score/classificação idênticos por (co_entidade, nu_ano_censo)? {iguais}")
 
