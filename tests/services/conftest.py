@@ -198,6 +198,12 @@ def make_pontos_mapa():
             **{**base, "in_internet": 1.0, "qt_desktop_aluno": 9.0},
             "score_conectividade": 26,  # pré-computado, pode passar de 17
             "classificacao_conectividade": "Boa",
+            "ideb_2023_anos_iniciais": 5.8,
+            "ideb_2023_anos_finais": 4.9,
+            "ideb_2023_ensino_medio": 4.1,
+            "ideb_2023_anos_iniciais_mun": 5.2,
+            "ideb_2023_anos_finais_mun": 4.5,
+            "ideb_2023_ensino_medio_mun": 3.9,
             "dt_carga": "2026-06-17T02:53:00.378258+00:00",
         },
         {
@@ -207,6 +213,12 @@ def make_pontos_mapa():
             **base,
             "score_conectividade": 0,
             "classificacao_conectividade": "Inexistente",
+            "ideb_2023_anos_iniciais": None,  # escola sem nota → NULL preservado
+            "ideb_2023_anos_finais": None,
+            "ideb_2023_ensino_medio": None,
+            "ideb_2023_anos_iniciais_mun": None,
+            "ideb_2023_anos_finais_mun": None,
+            "ideb_2023_ensino_medio_mun": None,
             "dt_carga": None,
         },
     ]

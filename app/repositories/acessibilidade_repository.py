@@ -343,6 +343,18 @@ class AcessibilidadeRepository:
     # coerente com o cálculo do score (NULL conta como 0).
     _MAPA_METRIC_COLS = tuple(METRIC_TO_FATO_COLUMN)
 
+    # IDEB 2023 pré-computado em gold.fato_score_acessibilidade (escola e município).
+    # Diferente das métricas: sai como float|None (sem COALESCE), pois nota 0 seria
+    # enganosa — NULL significa "sem nota", igual a find_ideb_por_entidades.
+    _MAPA_IDEB_COLS = (
+        "ideb_2023_anos_iniciais",
+        "ideb_2023_anos_finais",
+        "ideb_2023_ensino_medio",
+        "ideb_2023_anos_iniciais_mun",
+        "ideb_2023_anos_finais_mun",
+        "ideb_2023_ensino_medio_mun",
+    )
+
     async def find_pontos_mapa_raw(
         self,
         ano: int | None,
@@ -366,6 +378,7 @@ class AcessibilidadeRepository:
             *(func.coalesce(c[nome], 0).label(nome) for nome in self._MAPA_METRIC_COLS),
             c.score_acessibilidade,
             c.classificacao_acessibilidade,
+            *(c[nome] for nome in self._MAPA_IDEB_COLS),
             c.dt_carga,
         )
 
@@ -389,6 +402,10 @@ class AcessibilidadeRepository:
                 **{nome: float(r[nome]) for nome in self._MAPA_METRIC_COLS},
                 "score_acessibilidade": int(r["score_acessibilidade"]),
                 "classificacao_acessibilidade": r["classificacao_acessibilidade"],
+                **{
+                    nome: (float(r[nome]) if r[nome] is not None else None)
+                    for nome in self._MAPA_IDEB_COLS
+                },
                 "dt_carga": (
                     r["dt_carga"].isoformat() if r["dt_carga"] is not None else None
                 ),

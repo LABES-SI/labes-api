@@ -82,6 +82,12 @@ fato_score_acessibilidade = Table(
     Column("qt_prof_assist_social", Numeric),
     Column("score_acessibilidade", Integer),
     Column("classificacao_acessibilidade", String),
+    Column("ideb_2023_anos_iniciais", Numeric),
+    Column("ideb_2023_anos_finais", Numeric),
+    Column("ideb_2023_ensino_medio", Numeric),
+    Column("ideb_2023_anos_iniciais_mun", Numeric),
+    Column("ideb_2023_anos_finais_mun", Numeric),
+    Column("ideb_2023_ensino_medio_mun", Numeric),
     Column("dt_carga", DateTime(timezone=True)),
 )
 
