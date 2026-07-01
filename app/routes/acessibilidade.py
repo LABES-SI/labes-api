@@ -200,7 +200,7 @@ async def get_mapa_acessibilidade(
 ) -> MapaResponse:
     """Retorna as linhas de gold.fato_score_acessibilidade (uma por escola por
     ano censo) com as 15 métricas e o score (0-15) e classificação
-    (Boa/Média/Baixa/Inexistente) já pré-computados pelo pipeline de dados."""
+    (Excelente/Boa/Média/Baixa/Inexistente) já pré-computados pelo pipeline de dados."""
     envelope = await service.build_mapa(ano=ano, variaveis=variaveis, pibid=pibid)
     return MapaResponse(**envelope)
 
