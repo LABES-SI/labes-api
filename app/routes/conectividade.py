@@ -203,7 +203,7 @@ async def get_mapa_conectividade(
 ) -> MapaResponse:
     """Retorna as linhas de gold.fato_score_conectividade (uma por escola por
     ano censo) com as 17 métricas e o score e classificação
-    (Boa/Média/Baixa/Inexistente) já pré-computados pelo pipeline de dados. O
+    (Excelente/Boa/Média/Baixa/Inexistente) já pré-computados pelo pipeline de dados. O
     score pré-computado não é binário (colunas qt_* somam quantidade), então
     excede 17."""
     envelope = await service.build_mapa(ano=ano, variaveis=variaveis, pibid=pibid)

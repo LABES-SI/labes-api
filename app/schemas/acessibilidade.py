@@ -78,7 +78,9 @@ class MapaPonto(BaseModel):
     qt_prof_psicologo: float
     qt_prof_assist_social: float
     score_acessibilidade: int = Field(..., ge=0, le=15)
-    classificacao_acessibilidade: Literal["Boa", "Média", "Baixa", "Inexistente"]
+    classificacao_acessibilidade: Literal[
+        "Excelente", "Boa", "Média", "Baixa", "Inexistente"
+    ]
     ideb_2023_anos_iniciais: float | None
     ideb_2023_anos_finais: float | None
     ideb_2023_ensino_medio: float | None
