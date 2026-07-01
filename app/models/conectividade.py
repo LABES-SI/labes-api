@@ -94,5 +94,11 @@ fato_score_conectividade = Table(
     Column("in_redes_sociais", Numeric),
     Column("score_conectividade", Integer),
     Column("classificacao_conectividade", String),
+    Column("ideb_2023_anos_iniciais", Numeric),
+    Column("ideb_2023_anos_finais", Numeric),
+    Column("ideb_2023_ensino_medio", Numeric),
+    Column("ideb_2023_anos_iniciais_mun", Numeric),
+    Column("ideb_2023_anos_finais_mun", Numeric),
+    Column("ideb_2023_ensino_medio_mun", Numeric),
     Column("dt_carga", DateTime(timezone=True)),
 )

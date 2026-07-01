@@ -74,6 +74,12 @@ class MapaPonto(BaseModel):
     in_redes_sociais: float
     score_conectividade: int = Field(..., ge=0)
     classificacao_conectividade: Literal["Boa", "Média", "Baixa", "Inexistente"]
+    ideb_2023_anos_iniciais: float | None
+    ideb_2023_anos_finais: float | None
+    ideb_2023_ensino_medio: float | None
+    ideb_2023_anos_iniciais_mun: float | None
+    ideb_2023_anos_finais_mun: float | None
+    ideb_2023_ensino_medio_mun: float | None
     dt_carga: str | None
 
 
