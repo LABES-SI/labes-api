@@ -12,9 +12,11 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.repositories.acessibilidade_repository import AcessibilidadeRepository
 from app.repositories.conectividade_repository import ConectividadeRepository
+from app.repositories.infraestrutura_repository import InfraestruturaRepository
 from app.services.acessibilidade_service import AcessibilidadeService
 from app.services.conectividade_service import ConectividadeService
 from app.services.filtros_service import FiltrosService
+from app.services.infraestrutura_service import InfraestruturaService
 
 
 async_engine = create_async_engine(
@@ -73,6 +75,20 @@ def get_conectividade_service(
     return ConectividadeService(repository)
 
 
+def get_infraestrutura_repository() -> InfraestruturaRepository:
+    # Mesmo padrão de acessibilidade/conectividade: sessionmaker (sessão-por-query)
+    # + o semáforo compartilhado de warehouse.
+    return InfraestruturaRepository(
+        SessionLocal, semaphore=warehouse_query_semaphore
+    )
+
+
+def get_infraestrutura_service(
+    repository: InfraestruturaRepository = Depends(get_infraestrutura_repository),
+) -> InfraestruturaService:
+    return InfraestruturaService(repository)
+
+
 def get_filtros_service(
     repository: AcessibilidadeRepository = Depends(get_acessibilidade_repository),
 ) -> FiltrosService:
@@ -88,6 +104,8 @@ __all__ = [
     "get_acessibilidade_service",
     "get_conectividade_repository",
     "get_conectividade_service",
+    "get_infraestrutura_repository",
+    "get_infraestrutura_service",
     "get_filtros_service",
     "async_engine",
     "SessionLocal",

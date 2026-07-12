@@ -10,6 +10,7 @@ from app.routes.acessibilidade import router as acessibilidade_router
 from app.routes.conectividade import router as conectividade_router
 from app.routes.filtros import router as filtros_router
 from app.routes.health import router as health_router
+from app.routes.infraestrutura import router as infraestrutura_router
 
 configure_logging()
 
@@ -38,6 +39,7 @@ app.add_exception_handler(AppError, app_error_handler)
 app.include_router(health_router)
 app.include_router(acessibilidade_router)
 app.include_router(conectividade_router)
+app.include_router(infraestrutura_router)
 app.include_router(filtros_router)
 
 
