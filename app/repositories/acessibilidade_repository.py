@@ -69,8 +69,9 @@ VARIAVEIS_ACESSIBILIDADE_MAPA: dict[str, "object"] = {
 
 
 # Ano fixo da nota do IDEB exposta no hover do gráfico por escola — espelha
-# ANO_IDEB=2023 do notebook (cell-10). Lido diretamente de uma coluna por etapa.
-IDEB_YEAR_COLUMN = "ideb_2023"
+# ANO_IDEB=2023 do notebook (cell-10). Tabela gold é formato longo (uma linha
+# por ano), filtrada por `ano` e lendo a coluna `ideb`.
+IDEB_YEAR = 2023
 
 
 def _row_to_municipio(row) -> AcessibilidadeMunicipio:
@@ -978,8 +979,8 @@ class AcessibilidadeRepository:
     ) -> dict[int, dict[str, float | None]]:
         """
         Retorna {co_entidade: {"iniciais": ..., "finais": ..., "medio": ...}}
-        para cada escola, lendo a coluna de ano fixo (`IDEB_YEAR_COLUMN`) em cada
-        uma das três etapas do gold, igual ao notebook (cell-10, ANO_IDEB=2023).
+        para cada escola, lendo o ano fixo (`IDEB_YEAR`) em cada uma das três
+        etapas do gold, igual ao notebook (cell-10, ANO_IDEB=2023).
         """
         if not entidades:
             return {}
@@ -995,10 +996,14 @@ class AcessibilidadeRepository:
         ]
 
         for table, chave in tabelas:
-            col = table.c[IDEB_YEAR_COLUMN]
+            col = table.c.ideb
             stmt = (
                 select(table.c.co_entidade, col)
-                .where(table.c.co_entidade.in_(entidades), col.is_not(None))
+                .where(
+                    table.c.co_entidade.in_(entidades),
+                    table.c.ano == IDEB_YEAR,
+                    col.is_not(None),
+                )
             )
             rows = (await self._execute(stmt)).fetchall()
             for co_entidade, nota in rows:

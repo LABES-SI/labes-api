@@ -69,7 +69,7 @@ VARIAVEIS_CONECTIVIDADE_MAPA: dict[str, "object"] = {
 
 # Ano fixo da nota do IDEB exposta no hover do gráfico por escola — espelha
 # ANO_IDEB=2023 do notebook (cell-12). Lido diretamente de uma coluna por etapa.
-IDEB_YEAR_COLUMN = "ideb_2023"
+IDEB_YEAR = 2023
 
 
 def _row_to_municipio(row) -> ConectividadeMunicipio:
@@ -921,8 +921,8 @@ class ConectividadeRepository:
     ) -> dict[int, dict[str, float | None]]:
         """
         Retorna {co_entidade: {"iniciais": ..., "finais": ..., "medio": ...}}
-        para cada escola, lendo a coluna de ano fixo (`IDEB_YEAR_COLUMN`) em cada
-        uma das três etapas do gold, igual ao notebook (cell-12, ANO_IDEB=2023).
+        para cada escola, lendo o ano fixo (`IDEB_YEAR`) em cada uma das três
+        etapas do gold, igual ao notebook (cell-12, ANO_IDEB=2023).
         """
         if not entidades:
             return {}
@@ -938,10 +938,14 @@ class ConectividadeRepository:
         ]
 
         for table, chave in tabelas:
-            col = table.c[IDEB_YEAR_COLUMN]
+            col = table.c.ideb
             stmt = (
                 select(table.c.co_entidade, col)
-                .where(table.c.co_entidade.in_(entidades), col.is_not(None))
+                .where(
+                    table.c.co_entidade.in_(entidades),
+                    table.c.ano == IDEB_YEAR,
+                    col.is_not(None),
+                )
             )
             rows = (await self._execute(stmt)).fetchall()
             for co_entidade, nota in rows:

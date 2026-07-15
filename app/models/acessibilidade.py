@@ -127,24 +127,16 @@ dim_tp_localizacao = Table(
 )
 
 
-# IDEB no gold: coluna `ideb` (valor observado mais recente, usada pelo painel de
-# infraestrutura) + uma coluna por ano (ideb_2005..ideb_2023). co_entidade minúsculo.
+# IDEB no gold: formato longo, uma linha por (co_entidade, ano) com a nota em
+# `ideb`. co_entidade minúsculo.
 def _ideb_table(name: str) -> Table:
     return Table(
         name,
         gold_metadata,
         Column("co_entidade", Integer),
+        Column("ano", Integer),
         Column("ideb", Numeric),
-        Column("ideb_2005", Numeric),
-        Column("ideb_2007", Numeric),
-        Column("ideb_2009", Numeric),
-        Column("ideb_2011", Numeric),
-        Column("ideb_2013", Numeric),
-        Column("ideb_2015", Numeric),
-        Column("ideb_2017", Numeric),
-        Column("ideb_2019", Numeric),
-        Column("ideb_2021", Numeric),
-        Column("ideb_2023", Numeric),
+        Column("dt_carga", DateTime(timezone=True)),
     )
 
 
