@@ -1,0 +1,67 @@
+{
+  "status": "EXPLORATORIO_NAO_HOMOLOGADO",
+  "origin": "DAD-03B primeira execução, comparada à extração complementar reportada em 2026-10-12",
+  "source_snapshot": "primeira execução: desconhecido; extração complementar: snapshot registrado no manifest local, não transcrito aqui",
+  "population_scope": "município 1507102 e escola 15052737; recorte local 2022-2025",
+  "indicators": "17 campos candidatos; S não homologado",
+  "coverage_policy": "completa, provisória e exclusiva da validação exploratória",
+  "comparison_preconditions": [
+    "confirmar que API e DAD-03B consultam o mesmo conjunto de dados e critérios",
+    "confirmar por ano município, escola e conjunto de indicadores",
+    "recalcular contagens e denominadores a partir da evidência bruta; estes agregados não as substituem"
+  ],
+  "records": [
+    {
+      "year": 2022,
+      "municipality_code": 1507102,
+      "selected_school_id": 15052737,
+      "reference_school_count": 34,
+      "school_index_pct_exact": "1300/17",
+      "municipal_reference_pct_exact": "8250/289",
+      "difference_pp_exact": "13850/289",
+      "selected_valid_count": 17,
+      "selected_yes_count": 13,
+      "observed_school_year_rows": 37,
+      "complete_school_year_rows": 35
+    },
+    {
+      "year": 2023,
+      "municipality_code": 1507102,
+      "selected_school_id": 15052737,
+      "reference_school_count": 34,
+      "school_index_pct_exact": "1300/17",
+      "municipal_reference_pct_exact": "8650/289",
+      "difference_pp_exact": "13450/289",
+      "selected_valid_count": 17,
+      "selected_yes_count": 13,
+      "observed_school_year_rows": 38,
+      "complete_school_year_rows": 35
+    },
+    {
+      "year": 2024,
+      "municipality_code": 1507102,
+      "selected_school_id": 15052737,
+      "reference_school_count": 37,
+      "school_index_pct_exact": "1300/17",
+      "municipal_reference_pct_exact": "18400/629",
+      "difference_pp_exact": "29700/629",
+      "selected_valid_count": 17,
+      "selected_yes_count": 13,
+      "observed_school_year_rows": 40,
+      "complete_school_year_rows": 38
+    },
+    {
+      "year": 2025,
+      "municipality_code": 1507102,
+      "selected_school_id": 15052737,
+      "reference_school_count": 37,
+      "school_index_pct_exact": "1300/17",
+      "municipal_reference_pct_exact": "20800/629",
+      "difference_pp_exact": "27300/629",
+      "selected_valid_count": 17,
+      "selected_yes_count": 13,
+      "observed_school_year_rows": 40,
+      "complete_school_year_rows": 38
+    }
+  ]
+}

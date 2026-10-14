@@ -2,14 +2,16 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.dependencies import get_infraestrutura_service
+from app.core.dependencies import get_infraestrutura_repository, get_infraestrutura_service
 from app.schemas.infraestrutura import (
     AnaliseTemporalResponse,
+    EscolaMunicipioResponseExperimental,
     MapaResponse,
     PainelEscolasResponse,
     PainelResponse,
 )
 from app.services.infraestrutura_service import InfraestruturaService
+from app.services.infraestrutura_escola_municipio import InfraestruturaEscolaMunicipioService
 
 router = APIRouter(prefix="/infraestrutura", tags=["infraestrutura"])
 
@@ -211,3 +213,28 @@ async def get_analise_temporal_infraestrutura(
     dos anos censo."""
     envelope = await service.build_analise_temporal(metrica=metrica, pibid=pibid)
     return AnaliseTemporalResponse(**envelope)
+
+
+@router.get(
+    "/analise-temporal/escola-municipio",
+    response_model=EscolaMunicipioResponseExperimental,
+    summary="Experimental comparison of a school with the rest of its municipality",
+)
+async def get_analise_temporal_escola_municipio(
+    school_id: int = Query(..., ge=1, description="Identificador da escola selecionada."),
+    years: list[int] = Query(
+        default=[2022, 2023, 2024, 2025],
+        min_length=1,
+        max_length=4,
+        description="Observation years (2022-2025); repeat the years parameter.",
+    ),
+    repository=Depends(get_infraestrutura_repository),
+) -> EscolaMunicipioResponseExperimental:
+    """Isolated experimental route; the legacy route semantics stay unchanged."""
+    from fastapi import HTTPException
+
+    if len(set(years)) != len(years) or any(year not in {2022, 2023, 2024, 2025} for year in years):
+        raise HTTPException(status_code=422, detail="years must contain unique years between 2022 and 2025")
+    service = InfraestruturaEscolaMunicipioService(repository)
+    envelope = await service.build(school_id=school_id, years=years)
+    return EscolaMunicipioResponseExperimental(**envelope)

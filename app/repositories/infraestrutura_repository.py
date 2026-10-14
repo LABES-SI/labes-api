@@ -771,6 +771,52 @@ class InfraestruturaRepository:
 
         return resultado
 
+    async def find_escola_municipio_raw(
+        self, school_id: int, years: list[int]
+    ) -> list[dict]:
+        """Return the target school and same-year municipal rows without COALESCE.
+
+        The first query finds the target observations; the second reads only
+        their observed year/municipality pairs. Current dimensions do not
+        reclassify historical observations.
+        """
+        i = infraestrutura_comum.c
+        columns = [
+            i.CO_MUNICIPIO.label("municipality_code"),
+            i.NO_MUNICIPIO.label("municipality_name"),
+            i.NU_ANO_CENSO.label("year"),
+            i.CO_ENTIDADE.label("school_id"),
+            *(column.label(key) for key, column in METRIC_TO_COLUMN.items()),
+        ]
+        selected_stmt = (
+            select(*columns)
+            .where(i.CO_ENTIDADE == school_id, i.NU_ANO_CENSO.in_(years))
+        )
+        selected_result = await self._execute(selected_stmt)
+        selected_rows = [dict(row) for row in selected_result.mappings().all()]
+        if not selected_rows:
+            return []
+
+        pairs = {
+            (row["year"], row["municipality_code"])
+            for row in selected_rows
+            if row["municipality_code"] is not None
+        }
+        if not pairs:
+            return selected_rows
+
+        pair_predicates = [
+            and_(i.NU_ANO_CENSO == year, i.CO_MUNICIPIO == municipality_code)
+            for year, municipality_code in sorted(pairs)
+        ]
+        group_stmt = select(*columns).where(or_(*pair_predicates))
+        group_result = await self._execute(group_stmt)
+        group_rows = [dict(row) for row in group_result.mappings().all()]
+        null_municipality_selected = [
+            row for row in selected_rows if row["municipality_code"] is None
+        ]
+        return group_rows + null_municipality_selected
+
     async def find_pontos_mapa_raw(
         self,
         ano: int | None,

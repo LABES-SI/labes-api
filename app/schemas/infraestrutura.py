@@ -92,3 +92,61 @@ class AnaliseTemporalResponse(BaseModel):
 
     descricao: str = Field(..., description="Identificador semântico do recurso.")
     data: AnaliseTemporalData
+
+
+class IntegridadeEscolaMunicipio(BaseModel):
+    school_id: int | None = None
+    year: int
+    issue: Literal["duplicate_school_year", "invalid_indicator", "missing_school_id"]
+    indicator: str | None = None
+
+
+class EscolaMunicipioAnoExperimental(BaseModel):
+    year: int
+    school_id: int
+    municipality_code: int | None
+    municipality_name: str | None
+    n_selected_indicators: int
+    n_valid_indicators: int | None
+    n_yes: int | None
+    n_no: int | None
+    n_null: int | None
+    n_invalid_indicators: int | None
+    coverage_exact: str | None
+    eligible_for_comparison: bool | None
+    school_index_pct_exact: str | None
+    index_status: Literal[
+        "complete",
+        "partial",
+        "observada_sem_indicadores_validos",
+        "nao_observada",
+        "entrada_invalida",
+        "duplicidade_escola_ano",
+    ]
+    n_comparable_schools: int | None
+    municipal_mean_excluding_school_pct_exact: str | None
+    difference_pp_exact: str | None
+    reference_status: Literal[
+        "available",
+        "sem_comparadoras",
+        "comparadora_unica",
+        "integridade_referencia",
+        "territorio_pendente",
+        "nao_avaliada",
+    ]
+    unavailability_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    integrity_issues: list[IntegridadeEscolaMunicipio] = Field(default_factory=list)
+
+
+class EscolaMunicipioDataExperimental(BaseModel):
+    status: Literal["experimental_nao_homologado"]
+    methodology_version: str
+    indicator_set_version: str
+    indicator_set_homologated: Literal[False]
+    records: list[EscolaMunicipioAnoExperimental]
+
+
+class EscolaMunicipioResponseExperimental(BaseModel):
+    descricao: str
+    data: EscolaMunicipioDataExperimental
